@@ -3,64 +3,320 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define ARM_ALU_OP(op) \
-static const cpu_instr_t arm_##op##_lli = \
+#define ARM_LSL(v, s) ((v) << (s))
+#define ARM_LSR(v, s) ((v) >> (s))
+#define ARM_ASR(v, s) ((int32_t)(v) >> (s))
+#define ARM_ROR(v, s) (((v) >> (s)) | ((v) << (32 - (s))))
+
+static void exec_alu_flags_1(cpu_t *cpu, uint32_t v)
+{
+	CPU_SET_FLAG_N(cpu, v & 0x80000000);
+	CPU_SET_FLAG_Z(cpu, !v);
+}
+
+static void exec_alu_and(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 & op2;
+}
+
+static void exec_alu_ands(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 & op2;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+static void exec_alu_eor(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 ^ op2;
+}
+
+static void exec_alu_eors(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 ^ op2;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+static void exec_alu_sub(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 - op2;
+}
+
+static void exec_alu_subs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 - op2;
+}
+
+static void exec_alu_rsb(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op2 - op1;
+}
+
+static void exec_alu_rsbs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op2 - op1;
+}
+
+static void exec_alu_add(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 + op2;
+}
+
+static void exec_alu_adds(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 + op2;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+static void exec_alu_adc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 + op2 + CPU_GET_FLAG_C(cpu);
+}
+
+static void exec_alu_adcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 + op2 + CPU_GET_FLAG_C(cpu);
+}
+
+static void exec_alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 - op2 + CPU_GET_FLAG_C(cpu) - 1;
+}
+
+static void exec_alu_sbcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 - op2 + CPU_GET_FLAG_C(cpu) - 1;
+}
+
+static void exec_alu_rsc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op2 - op1 + CPU_GET_FLAG_C(cpu) - 1;
+}
+
+static void exec_alu_rscs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op2 - op1 + CPU_GET_FLAG_C(cpu) - 1;
+}
+
+static void exec_alu_tsts(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 & op2;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+static void exec_alu_teqs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 ^ op2;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+static void exec_alu_cmps(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 - op2;
+	if (rd == 0xF)
+	{
+		fprintf(stderr, "unsupported\n");
+	}
+	else
+	{
+		CPU_SET_FLAG_V(cpu, ((op1 ^ op2) & 0x80000000) && ((op1 ^ v) & 0x80000000));
+		CPU_SET_FLAG_C(cpu, op2 > op1);
+		CPU_SET_FLAG_N(cpu, v & 0x80000000);
+		CPU_SET_FLAG_Z(cpu, !v);
+	}
+}
+
+static void exec_alu_cmns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 + op2;
+}
+
+static void exec_alu_orr(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 | op2;
+	cpu->regs.r[rd] = v;
+}
+
+static void exec_alu_orrs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 | op2;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+static void exec_alu_mov(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op2;
+}
+
+static void exec_alu_movs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op2;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+static void exec_alu_bic(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = op1 & ~op2;
+}
+
+static void exec_alu_bics(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = op1 & ~op2;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+static void exec_alu_mvn(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	cpu->regs.r[rd] = ~op2;
+}
+
+static void exec_alu_mvns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
+{
+	uint32_t v = ~op2;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+		exec_alu_flags_1(cpu, v);
+}
+
+#define ARM_ALU_DECODEI(cpu) \
+	uint8_t shift = (cpu->instr_opcode >> 7) & 0x1F; \
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
+	uint32_t op1 = cpu->regs.r[(cpu->instr_opcode >> 16) & 0xF]; \
+	uint32_t op2s = cpu->regs.r[(cpu->instr_opcode >>  0) & 0xF]
+
+#define ARM_ALU_DECODER(cpu) \
+	uint8_t shift = cpu->regs.r[(cpu->instr_opcode >> 8) & 0xF] & 0xFF; \
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
+	uint32_t op1 = cpu->regs.r[(cpu->instr_opcode >> 16) & 0xF]; \
+	uint32_t op2s = cpu->regs.r[(cpu->instr_opcode >>  0) & 0xF]
+
+#define ARM_ALU_DECODEP(cpu) \
+	uint8_t shift = (cpu->instr_opcode >> 7) & 0x1F; \
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
+	uint32_t op1 = (cpu->instr_opcode >> 16) & 0xF; \
+	uint32_t op2 = (cpu->instr_opcode >>  0) & 0xF
+
+#define ARM_ALU_OP_ROT(op, rot, rot_name, rot_opi, rot_opr) \
+static bool exec_##op##_##rot##i(cpu_t *cpu) \
 { \
-	.name = #op " lli", \
-}; \
-static const cpu_instr_t arm_##op##_llr = \
+	ARM_ALU_DECODEI(cpu); \
+	rot_opi \
+	exec_alu_##op(cpu, rd, op1, op2); \
+	return true; \
+} \
+static void print_##op##_##rot##i(cpu_t *cpu, char *data, size_t size) \
 { \
-	.name = #op " llr", \
-}; \
-static const cpu_instr_t arm_##op##_lri = \
+	ARM_ALU_DECODEP(cpu); \
+	snprintf(data, size, "%s r%d, r%d, r%d, " rot_name " #%d", #op, rd, op1, op2, shift); \
+} \
+static const cpu_instr_t arm_##op##_##rot##i = \
 { \
-	.name = #op " lri", \
+	.name = #op " " #rot "i", \
+	.exec = exec_##op##_##rot##i, \
+	.print = print_##op##_##rot##i, \
 }; \
-static const cpu_instr_t arm_##op##_lrr = \
+static bool exec_##op##_##rot##r(cpu_t *cpu) \
 { \
-	.name = #op " lrr", \
-}; \
-static const cpu_instr_t arm_##op##_ari = \
+	ARM_ALU_DECODER(cpu); \
+	rot_opr \
+	exec_alu_##op(cpu, rd, op1, op2); \
+	return true; \
+} \
+static void print_##op##_##rot##r(cpu_t *cpu, char *data, size_t size) \
 { \
-	.name = #op " ari", \
-}; \
-static const cpu_instr_t arm_##op##_arr = \
+	ARM_ALU_DECODEP(cpu); \
+	snprintf(data, size, "%s r%d, r%d, r%d, " rot_name " r%d", #op, rd, op1, op2, shift); \
+} \
+static const cpu_instr_t arm_##op##_##rot##r = \
 { \
-	.name = #op " arr", \
-}; \
-static const cpu_instr_t arm_##op##_rri = \
+	.name = #op " " #rot "r", \
+	.exec = exec_##op##_##rot##r, \
+	.print = print_##op##_##rot##r, \
+};\
+
+#define ARM_ALU_LLI(ctest) uint32_t op2 = ARM_LSL(op2s, shift); if (!ctest || shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (32 - shift))); }
+#define ARM_ALU_LLR(ctest) uint32_t op2 = ARM_LSL(op2s, shift); if (!ctest || shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (32 - shift))); }
+#define ARM_ALU_LRI(ctest) uint32_t op2 = ARM_LSR(op2s, shift ? shift : 32);
+#define ARM_ALU_LRR(ctest) uint32_t op2 = ARM_LSR(op2s, shift);
+#define ARM_ALU_ARI(ctest) uint32_t op2 = ARM_ASR(op2s, shift ? shift : 32);
+#define ARM_ALU_ARR(ctest) uint32_t op2 = ARM_ASR(op2s, shift);
+#define ARM_ALU_RRI(ctest) \
+	uint32_t op2; \
+	if (shift == 32) \
+	{ \
+		op2 = op2s >> 1; \
+		op2 |= CPU_GET_FLAG_C(cpu) >> 31; \
+		CPU_SET_FLAG_C(cpu, op2s & 0x1 ); \
+	} \
+	else \
+	{ \
+		op2 = ARM_ROR(op2s, shift); \
+	}
+#define ARM_ALU_RRR(ctest) uint32_t op2 = ARM_ROR(op2s, shift);
+
+#define ARM_ALU_OP(op, ctest) \
+ARM_ALU_OP_ROT(op, ll, "LSL", ARM_ALU_LLI(ctest), ARM_ALU_LLR(ctest)) \
+ARM_ALU_OP_ROT(op, lr, "LSR", ARM_ALU_LRI(ctest), ARM_ALU_LRR(ctest)) \
+ARM_ALU_OP_ROT(op, ar, "ASR", ARM_ALU_ARI(ctest), ARM_ALU_ARR(ctest)) \
+ARM_ALU_OP_ROT(op, rr, "ROR", ARM_ALU_RRI(ctest), ARM_ALU_RRR(ctest)) \
+static bool exec_##op##_imm(cpu_t *cpu) \
 { \
-	.name = #op " rri", \
-}; \
-static const cpu_instr_t arm_##op##_rrr = \
+	uint32_t shift = (cpu->instr_opcode >> 8) & 0xF; \
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
+	uint32_t op1 = cpu->regs.r[(cpu->instr_opcode >> 16) & 0xF]; \
+	uint32_t op2s = (cpu->instr_opcode >> 0) & 0xFF; \
+	uint32_t op2 = ARM_ROR(op2s, shift * 2); \
+	exec_alu_##op(cpu, rd, op1, op2); \
+	return true; \
+} \
+static void print_##op##_imm(cpu_t *cpu, char *data, size_t size) \
 { \
-	.name = #op " rrr", \
-}; \
+	uint32_t shift = (cpu->instr_opcode >> 8) & 0xF; \
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
+	uint32_t op1 = (cpu->instr_opcode >> 16) & 0xF; \
+	uint32_t op2 = (cpu->instr_opcode >> 0) & 0xFF; \
+	snprintf(data, size, "%s r%d, r%d, #%d, ROR #%d", #op, rd, op1, op2, shift * 2); \
+} \
 static const cpu_instr_t arm_##op##_imm = \
 { \
 	.name = #op " imm", \
+	.exec = exec_##op##_imm, \
+	.print = print_##op##_imm, \
 };
 
-#define ARM_ALU_OPS(op) \
-	ARM_ALU_OP(op) \
-	ARM_ALU_OP(op##s)
+#define ARM_ALU_OPS(op, ctest) \
+	ARM_ALU_OP(op   , 0) \
+	ARM_ALU_OP(op##s, ctest)
 
-ARM_ALU_OPS(and);
-ARM_ALU_OPS(eor);
-ARM_ALU_OPS(sub);
-ARM_ALU_OPS(rsb);
-ARM_ALU_OPS(add);
-ARM_ALU_OPS(adc);
-ARM_ALU_OPS(sbc);
-ARM_ALU_OPS(rsc);
-ARM_ALU_OP(tsts);
-ARM_ALU_OP(teqs);
-ARM_ALU_OP(cmps);
-ARM_ALU_OP(cmns);
-ARM_ALU_OPS(orr);
-ARM_ALU_OPS(mov);
-ARM_ALU_OPS(bic);
-ARM_ALU_OPS(mvn);
+ARM_ALU_OPS(and, 1);
+ARM_ALU_OPS(eor, 1);
+ARM_ALU_OPS(sub, 0);
+ARM_ALU_OPS(rsb, 0);
+ARM_ALU_OPS(add, 0);
+ARM_ALU_OPS(adc, 0);
+ARM_ALU_OPS(sbc, 0);
+ARM_ALU_OPS(rsc, 0);
+ARM_ALU_OP(tsts, 1);
+ARM_ALU_OP(teqs, 1);
+ARM_ALU_OP(cmps, 0);
+ARM_ALU_OP(cmns, 0);
+ARM_ALU_OPS(orr, 1);
+ARM_ALU_OPS(mov, 1);
+ARM_ALU_OPS(bic, 1);
+ARM_ALU_OPS(mvn, 1);
 
 static const cpu_instr_t arm_mul =
 {
@@ -591,13 +847,20 @@ static const cpu_instr_t arm_swpb =
 
 static bool exec_b(cpu_t *cpu)
 {
-	cpu->regs.r[15] += 4 + 4 * (cpu->instr_opcode & 0xFFFFFF);
+	int32_t v = cpu->instr_opcode & 0x7FFFFF;
+	if (cpu->instr_opcode & 0x800000)
+		v = -(~v & 0x7FFFFF);
+	cpu->regs.r[15] += 4 + 4 * v;
+	cpu->instr_delay = 3;
 	return true;
 }
 
 static void print_b(cpu_t *cpu, char *data, size_t size)
 {
-	snprintf(data, size, "b %x", cpu->instr_opcode & 0xFFFFFF);
+	int32_t v = cpu->instr_opcode & 0x7FFFFF;
+	if (cpu->instr_opcode & 0x800000)
+		v = -(~v & 0x7FFFFF);
+	snprintf(data, size, "b %c0x%x", v < 0 ? '-' : '+', v < 0 ? -v : v);
 }
 
 static const cpu_instr_t arm_b =
@@ -612,9 +875,18 @@ static const cpu_instr_t arm_bl =
 	.name = "bl",
 };
 
+static bool exec_bx(cpu_t *cpu)
+{
+	uint8_t rn = cpu->instr_opcode & 0xF;
+	cpu->regs.r[rn] |= 1;
+	cpu->thumb = true;
+	return true;
+}
+
 static const cpu_instr_t arm_bx =
 {
 	.name = "bx",
+	.exec = exec_bx,
 };
 
 static const cpu_instr_t arm_blx_reg =

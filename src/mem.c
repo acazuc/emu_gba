@@ -37,7 +37,7 @@ void *mem_ptr(mem_t *mem, uint32_t addr)
 {
 	if (addr >= 0x10000000)
 		return NULL;
-	switch ((addr >> 28) & 0xF)
+	switch ((addr >> 24) & 0xF)
 	{
 		case 0x0: //bios
 			if (addr < 0x4000)

@@ -16,16 +16,32 @@ typedef struct mem_s mem_t;
 #define CPU_FLAG_F (1 << 6)
 #define CPU_FLAG_T (1 << 5)
 
-#define CPU_HAS_FLAG(cpu, f) ((cpu->regs.cpsr & f) ? 1 : 0)
+#define CPU_GET_FLAG(cpu, f) ((cpu->regs.cpsr & f) ? 1 : 0)
+#define CPU_GET_FLAG_N(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_N)
+#define CPU_GET_FLAG_Z(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_Z)
+#define CPU_GET_FLAG_C(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_C)
+#define CPU_GET_FLAG_V(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_V)
+#define CPU_GET_FLAG_Q(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_Q)
+#define CPU_GET_FLAG_I(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_I)
+#define CPU_GET_FLAG_F(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_F)
+#define CPU_GET_FLAG_T(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_T)
 
-#define CPU_HAS_FLAG_N(cpu) CPU_HAS_FLAG(cpu, CPU_FLAG_N)
-#define CPU_HAS_FLAG_Z(cpu) CPU_HAS_FLAG(cpu, CPU_FLAG_Z)
-#define CPU_HAS_FLAG_C(cpu) CPU_HAS_FLAG(cpu, CPU_FLAG_C)
-#define CPU_HAS_FLAG_V(cpu) CPU_HAS_FLAG(cpu, CPU_FLAG_V)
-#define CPU_HAS_FLAG_Q(cpu) CPU_HAS_FLAG(cpu, CPU_FLAG_Q)
-#define CPU_HAS_FLAG_I(cpu) CPU_HAS_FLAG(cpu, CPU_FLAG_I)
-#define CPU_HAS_FLAG_F(cpu) CPU_HAS_FLAG(cpu, CPU_FLAG_F)
-#define CPU_HAS_FLAG_T(cpu) CPU_HAS_FLAG(cpu, CPU_FLAG_T)
+#define CPU_SET_FLAG(cpu, f, v) \
+do \
+{ \
+	if (v) \
+		cpu->regs.cpsr |= f; \
+	else \
+		cpu->regs.cpsr &= ~f; \
+} while (0)
+#define CPU_SET_FLAG_N(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_N, v)
+#define CPU_SET_FLAG_Z(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_Z, v)
+#define CPU_SET_FLAG_C(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_C, v)
+#define CPU_SET_FLAG_V(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_V, v)
+#define CPU_SET_FLAG_Q(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_Q, v)
+#define CPU_SET_FLAG_I(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_I, v)
+#define CPU_SET_FLAG_F(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_F, v)
+#define CPU_SET_FLAG_T(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_T, v)
 
 typedef struct cpu_regs_s
 {
@@ -61,6 +77,7 @@ typedef struct cpu_s
 	mem_t *mem;
 	const cpu_instr_t *instr;
 	uint32_t instr_opcode;
+	uint32_t instr_delay;
 } cpu_t;
 
 cpu_t *cpu_new(mem_t *mem);
