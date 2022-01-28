@@ -1,0 +1,23 @@
+# Software Information
+display_name = "Nintendo - Game Boy Advance (emu_gba))"
+authors = "acazuc"
+supported_extensions = "gba"
+corename = "emu_gba"
+display_version = "v0.1.0"
+categories = "Emulator"
+license = "BSDv2"
+permissions = ""
+
+# Hardware Information
+manufacturer = "Nintendo"
+systemname = "Game Boy Advance"
+systemid = "game_boy_advance"
+
+# Libretro Features
+database = "Nintendo - Game Boy Advance"
+supports_no_game = "false"
+
+# Firmware / BIOS
+firmware_count = 0
+
+description = "Simple Game Boy Advabce emulator"

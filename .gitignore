@@ -1,0 +1,5 @@
+*.so
+obj
+*.swp
+*.swo
+gbabios*
