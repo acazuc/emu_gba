@@ -108,7 +108,6 @@ static bool next_instruction(cpu_t *cpu)
 	{
 		cpu->instr_opcode = mem_get16(cpu->mem, cpu->regs.r[15]);
 		cpu->instr = cpu_instr_thumb[cpu->instr_opcode >> 8];
-		cpu->regs.r[15] += 2;
 	}
 	else
 	{
@@ -148,9 +147,9 @@ void cpu_cycle(cpu_t *cpu)
 	else
 	{
 		print_instr(cpu, "UNIM", cpu->instr);
+		cpu->regs.r[15] += cpu->thumb ? 2 : 4;
 	}
 
-	cpu->regs.r[15] += 4;
 	if (!next_instruction(cpu))
 		return;
 }

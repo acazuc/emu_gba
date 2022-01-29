@@ -260,6 +260,8 @@ static void exec_##op##_##rot##i(cpu_t *cpu) \
 	ARM_ALU_DECODEI(cpu); \
 	rot_opi \
 	exec_alu_##op(cpu, rd, op1, op2); \
+	if (rd != 0xF) \
+		cpu->regs.r[15] += 4; \
 } \
 static void print_##op##_##rot##i(cpu_t *cpu, char *data, size_t size) \
 { \
@@ -277,6 +279,8 @@ static void exec_##op##_##rot##r(cpu_t *cpu) \
 	ARM_ALU_DECODER(cpu); \
 	rot_opr \
 	exec_alu_##op(cpu, rd, op1, op2); \
+	if (rd != 0xF) \
+		cpu->regs.r[15] += 4; \
 } \
 static void print_##op##_##rot##r(cpu_t *cpu, char *data, size_t size) \
 { \
@@ -323,6 +327,8 @@ static void exec_##op##_imm(cpu_t *cpu) \
 	uint32_t op2s = (cpu->instr_opcode >> 0) & 0xFF; \
 	uint32_t op2 = ARM_ROR(op2s, shift * 2); \
 	exec_alu_##op(cpu, rd, op1, op2); \
+	if (rd != 0xF) \
+		cpu->regs.r[15] += 4; \
 } \
 static void print_##op##_imm(cpu_t *cpu, char *data, size_t size) \
 { \
@@ -1031,7 +1037,7 @@ static void exec_b(cpu_t *cpu)
 	int32_t v = cpu->instr_opcode & 0x7FFFFF;
 	if (cpu->instr_opcode & 0x800000)
 		v = -(~v & 0x7FFFFF);
-	cpu->regs.r[15] += 4 * v;
+	cpu->regs.r[15] += 8 + 4 * v;
 	cpu->instr_delay = 3;
 }
 
@@ -1060,6 +1066,7 @@ static void exec_bx(cpu_t *cpu)
 	uint8_t rn = cpu->instr_opcode & 0xF;
 	cpu->regs.r[rn] |= 1;
 	cpu->thumb = true;
+	cpu->regs.r[15] += 4;
 }
 
 static const cpu_instr_t arm_bx =
