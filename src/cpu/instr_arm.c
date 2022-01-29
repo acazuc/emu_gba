@@ -1,5 +1,6 @@
 #include "instr_arm.h"
 #include "../cpu.h"
+#include "../mem.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -8,8 +9,15 @@
 #define ARM_ASR(v, s) ((int32_t)(v) >> (s))
 #define ARM_ROR(v, s) (((v) >> (s)) | ((v) << (32 - (s))))
 
-static void exec_alu_flags_1(cpu_t *cpu, uint32_t v)
+static void exec_alu_flags_logical(cpu_t *cpu, uint32_t v)
 {
+	CPU_SET_FLAG_N(cpu, v & 0x80000000);
+	CPU_SET_FLAG_Z(cpu, !v);
+}
+
+static void exec_alu_flags_arithmetical(cpu_t *cpu, uint32_t v, uint32_t op1, uint32_t op2)
+{
+	CPU_SET_FLAG_V(cpu, ((op1 ^ op2) & 0x80000000) && ((op1 ^ v) & 0x80000000));
 	CPU_SET_FLAG_N(cpu, v & 0x80000000);
 	CPU_SET_FLAG_Z(cpu, !v);
 }
@@ -24,7 +32,7 @@ static void exec_alu_ands(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = op1 & op2;
 	cpu->regs.r[rd] = v;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+		exec_alu_flags_logical(cpu, v);
 }
 
 static void exec_alu_eor(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -37,7 +45,7 @@ static void exec_alu_eors(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = op1 ^ op2;
 	cpu->regs.r[rd] = v;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+		exec_alu_flags_logical(cpu, v);
 }
 
 static void exec_alu_sub(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -47,7 +55,13 @@ static void exec_alu_sub(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_subs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
-	cpu->regs.r[rd] = op1 - op2;
+	uint32_t v = op1 - op2;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+	{
+		exec_alu_flags_arithmetical(cpu, v, op1, op2);
+		CPU_SET_FLAG_C(cpu, op2 > op1);
+	}
 }
 
 static void exec_alu_rsb(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -57,7 +71,13 @@ static void exec_alu_rsb(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_rsbs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
-	cpu->regs.r[rd] = op2 - op1;
+	uint32_t v = op2 - op1;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+	{
+		exec_alu_flags_arithmetical(cpu, v, op2, op1);
+		CPU_SET_FLAG_C(cpu, op1 > op2);
+	}
 }
 
 static void exec_alu_add(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -70,7 +90,10 @@ static void exec_alu_adds(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = op1 + op2;
 	cpu->regs.r[rd] = v;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+	{
+		exec_alu_flags_arithmetical(cpu, v, op1, op2);
+		CPU_SET_FLAG_C(cpu, v < op1);
+	}
 }
 
 static void exec_alu_adc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -80,7 +103,13 @@ static void exec_alu_adc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_adcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
-	cpu->regs.r[rd] = op1 + op2 + CPU_GET_FLAG_C(cpu);
+	uint32_t v = op1 + op2 + CPU_GET_FLAG_C(cpu);
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+	{
+		exec_alu_flags_arithmetical(cpu, v, op1, op2);
+		CPU_SET_FLAG_C(cpu, CPU_GET_FLAG_C(cpu) ? v <= op1 : v < op1);
+	}
 }
 
 static void exec_alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -90,7 +119,13 @@ static void exec_alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_sbcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
-	cpu->regs.r[rd] = op1 - op2 + CPU_GET_FLAG_C(cpu) - 1;
+	uint32_t v = op1 - op2 + CPU_GET_FLAG_C(cpu) - 1;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+	{
+		exec_alu_flags_arithmetical(cpu, v, op1, op2);
+		CPU_SET_FLAG_C(cpu, op2 + 1 - CPU_GET_FLAG_C(cpu) > op1);
+	}
 }
 
 static void exec_alu_rsc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -100,42 +135,47 @@ static void exec_alu_rsc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_rscs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
-	cpu->regs.r[rd] = op2 - op1 + CPU_GET_FLAG_C(cpu) - 1;
+	uint32_t v = op2 - op1 + CPU_GET_FLAG_C(cpu) - 1;
+	cpu->regs.r[rd] = v;
+	if (rd != 0xF)
+	{
+		exec_alu_flags_arithmetical(cpu, v, op2, op1);
+		CPU_SET_FLAG_C(cpu, op1 + 1 - CPU_GET_FLAG_C(cpu) > op2);
+	}
 }
 
 static void exec_alu_tsts(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
 	uint32_t v = op1 & op2;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+		exec_alu_flags_logical(cpu, v);
 }
 
 static void exec_alu_teqs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
 	uint32_t v = op1 ^ op2;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+		exec_alu_flags_logical(cpu, v);
 }
 
 static void exec_alu_cmps(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
 	uint32_t v = op1 - op2;
-	if (rd == 0xF)
+	if (rd != 0xF)
 	{
-		fprintf(stderr, "unsupported\n");
-	}
-	else
-	{
-		CPU_SET_FLAG_V(cpu, ((op1 ^ op2) & 0x80000000) && ((op1 ^ v) & 0x80000000));
+		exec_alu_flags_arithmetical(cpu, v, op2, op1);
 		CPU_SET_FLAG_C(cpu, op2 > op1);
-		CPU_SET_FLAG_N(cpu, v & 0x80000000);
-		CPU_SET_FLAG_Z(cpu, !v);
 	}
 }
 
 static void exec_alu_cmns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
 	uint32_t v = op1 + op2;
+	if (rd != 0xF)
+	{
+		exec_alu_flags_arithmetical(cpu, v, op2, op1);
+		CPU_SET_FLAG_C(cpu, v < op1);
+	}
 }
 
 static void exec_alu_orr(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -149,7 +189,7 @@ static void exec_alu_orrs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = op1 | op2;
 	cpu->regs.r[rd] = v;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+		exec_alu_flags_logical(cpu, v);
 }
 
 static void exec_alu_mov(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -162,7 +202,7 @@ static void exec_alu_movs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = op2;
 	cpu->regs.r[rd] = v;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+		exec_alu_flags_logical(cpu, v);
 }
 
 static void exec_alu_bic(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -175,7 +215,7 @@ static void exec_alu_bics(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = op1 & ~op2;
 	cpu->regs.r[rd] = v;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+		exec_alu_flags_logical(cpu, v);
 }
 
 static void exec_alu_mvn(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -188,20 +228,25 @@ static void exec_alu_mvns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = ~op2;
 	cpu->regs.r[rd] = v;
 	if (rd != 0xF)
-		exec_alu_flags_1(cpu, v);
+		exec_alu_flags_logical(cpu, v);
 }
+
+#define ARM_ALU_DECODEIR(cpu, pcoff) \
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
+	uint32_t op1r = (cpu->instr_opcode >> 16) & 0xF; \
+	uint32_t op1 = cpu->regs.r[op1r]; \
+	op1 += op1r == 15 ? pcoff : 0; \
+	uint32_t op2r = (cpu->instr_opcode >>  0) & 0xF; \
+	uint32_t op2s = cpu->regs.r[op2r]; \
+	op2s += op2r == 15 ? pcoff : 0
 
 #define ARM_ALU_DECODEI(cpu) \
 	uint8_t shift = (cpu->instr_opcode >> 7) & 0x1F; \
-	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
-	uint32_t op1 = cpu->regs.r[(cpu->instr_opcode >> 16) & 0xF]; \
-	uint32_t op2s = cpu->regs.r[(cpu->instr_opcode >>  0) & 0xF]
+	ARM_ALU_DECODEIR(cpu, 8)
 
 #define ARM_ALU_DECODER(cpu) \
 	uint8_t shift = cpu->regs.r[(cpu->instr_opcode >> 8) & 0xF] & 0xFF; \
-	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
-	uint32_t op1 = cpu->regs.r[(cpu->instr_opcode >> 16) & 0xF]; \
-	uint32_t op2s = cpu->regs.r[(cpu->instr_opcode >>  0) & 0xF]
+	ARM_ALU_DECODEIR(cpu, 12)
 
 #define ARM_ALU_DECODEP(cpu) \
 	uint8_t shift = (cpu->instr_opcode >> 7) & 0x1F; \
@@ -210,12 +255,11 @@ static void exec_alu_mvns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t op2 = (cpu->instr_opcode >>  0) & 0xF
 
 #define ARM_ALU_OP_ROT(op, rot, rot_name, rot_opi, rot_opr) \
-static bool exec_##op##_##rot##i(cpu_t *cpu) \
+static void exec_##op##_##rot##i(cpu_t *cpu) \
 { \
 	ARM_ALU_DECODEI(cpu); \
 	rot_opi \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	return true; \
 } \
 static void print_##op##_##rot##i(cpu_t *cpu, char *data, size_t size) \
 { \
@@ -228,12 +272,11 @@ static const cpu_instr_t arm_##op##_##rot##i = \
 	.exec = exec_##op##_##rot##i, \
 	.print = print_##op##_##rot##i, \
 }; \
-static bool exec_##op##_##rot##r(cpu_t *cpu) \
+static void exec_##op##_##rot##r(cpu_t *cpu) \
 { \
 	ARM_ALU_DECODER(cpu); \
 	rot_opr \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	return true; \
 } \
 static void print_##op##_##rot##r(cpu_t *cpu, char *data, size_t size) \
 { \
@@ -272,7 +315,7 @@ ARM_ALU_OP_ROT(op, ll, "LSL", ARM_ALU_LLI(ctest), ARM_ALU_LLR(ctest)) \
 ARM_ALU_OP_ROT(op, lr, "LSR", ARM_ALU_LRI(ctest), ARM_ALU_LRR(ctest)) \
 ARM_ALU_OP_ROT(op, ar, "ASR", ARM_ALU_ARI(ctest), ARM_ALU_ARR(ctest)) \
 ARM_ALU_OP_ROT(op, rr, "ROR", ARM_ALU_RRI(ctest), ARM_ALU_RRR(ctest)) \
-static bool exec_##op##_imm(cpu_t *cpu) \
+static void exec_##op##_imm(cpu_t *cpu) \
 { \
 	uint32_t shift = (cpu->instr_opcode >> 8) & 0xF; \
 	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
@@ -280,7 +323,6 @@ static bool exec_##op##_imm(cpu_t *cpu) \
 	uint32_t op2s = (cpu->instr_opcode >> 0) & 0xFF; \
 	uint32_t op2 = ARM_ROR(op2s, shift * 2); \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	return true; \
 } \
 static void print_##op##_imm(cpu_t *cpu, char *data, size_t size) \
 { \
@@ -458,66 +500,175 @@ static const cpu_instr_t arm_smulwt =
 	.name = "smulwt",
 };
 
-#define STLD_PTR(v) \
-static const cpu_instr_t arm_str_##v##ll = \
-{ \
-	.name = "str " #v "ll", \
-}; \
-static const cpu_instr_t arm_strh_##v = \
-{ \
-	.name = "strh " #v, \
-}; \
-static const cpu_instr_t arm_strd_##v = \
-{ \
-	.name = "strd " #v, \
-}; \
-static const cpu_instr_t arm_strb_##v##ll = \
-{ \
-	.name = "strb " #v "ll", \
-}; \
-static const cpu_instr_t arm_strt_##v##ll = \
-{ \
-	.name = "strt " #v "ll", \
-}; \
-static const cpu_instr_t arm_strbt_##v##ll = \
-{ \
-	.name = "strbt " #v "ll", \
-}; \
-static const cpu_instr_t arm_ldr_##v##ll = \
-{ \
-	.name = "ldr " #v "ll", \
-}; \
-static const cpu_instr_t arm_ldrh_##v = \
-{ \
-	.name = "ldrh " #v, \
-}; \
-static const cpu_instr_t arm_ldrd_##v = \
-{ \
-	.name = "ldrd " #v, \
-}; \
-static const cpu_instr_t arm_ldrb_##v##ll = \
-{ \
-	.name = "ldrb " #v "ll", \
-}; \
-static const cpu_instr_t arm_ldrt_##v##ll = \
-{ \
-	.name = "ldrt " #v "ll", \
-}; \
-static const cpu_instr_t arm_ldrbt_##v##ll = \
-{ \
-	.name = "ldrbt " #v "ll", \
-}; \
-static const cpu_instr_t arm_ldrsb_##v = \
-{ \
-	.name = "ldrsb " #v, \
-}; \
-static const cpu_instr_t arm_ldrsh_##v = \
-{ \
-	.name = "ldrsh " #v, \
-};
+/*
+ * ptrm: reg, post dec
+ * ptim: imm, post dec
+ * ptrp: reg, post inc
+ * ptip: imm, post inc
 
-STLD_PTR(ptrm);
-STLD_PTR(ptrp);
+ * ofrm: neg off reg
+ * prrm: reg, pre dec
+ * ofim: neg off imm
+ * prim: imm, pre dec
+
+ * ofrp: pos off reg
+ * prrp: reg, pre inc
+ * ofip: pos off imm
+ * prip: imm, pre inc
+ */
+
+#define STLD_HDST(opname, oparg, post_pre, dec_inc, reg_imm, writeback, st_ld, op) \
+static void exec_##opname##_##oparg(cpu_t *cpu) \
+{ \
+	uint32_t rnr = (cpu->instr_opcode >> 16) & 0xF; \
+	uint32_t rn = cpu->regs.r[rnr]; \
+	rn += (rnr == 15) ? 8 : 0; \
+	uint32_t rdr = (cpu->instr_opcode >> 12) & 0xF; \
+	uint32_t offset; \
+	if (reg_imm) \
+		offset = ((cpu->instr_opcode & 0xF00) >> 4) | (cpu->instr_opcode & 0xF); \
+	else \
+		offset = cpu->regs.r[cpu->instr_opcode & 0xF]; \
+	if (post_pre) \
+	{ \
+		if (dec_inc) \
+			rn += offset; \
+		else \
+			rn -= offset; \
+		if (writeback) \
+			cpu->regs.r[rnr] = rn; \
+	} \
+	if (st_ld) \
+	{ \
+		if (op == 1) \
+		{ \
+		} \
+		else if (op == 2) \
+		{ \
+		} \
+		else if (op == 3) \
+		{ \
+		} \
+	} \
+	else \
+	{ \
+		uint32_t rd = cpu->regs.r[rdr]; \
+		rd += (rdr == 15) ? 12 : 0; \
+		if (op == 1) \
+		{ \
+		} \
+		else if (op == 2) \
+		{ \
+		} \
+		else if (op == 3) \
+		{ \
+		} \
+	} \
+	if (!post_pre) \
+	{ \
+		if (dec_inc) \
+			rn += offset; \
+		else \
+			rn -= offset; \
+		cpu->regs.r[rnr] = rn; \
+	} \
+}; \
+static const cpu_instr_t arm_##opname##_##oparg = \
+{ \
+	.name = #opname " " #oparg, \
+	.exec = exec_##opname##_##oparg, \
+}
+
+#define STLD_PTR_STR_S(v, s, dec_inc) \
+static const cpu_instr_t arm_str_##v####s = \
+{ \
+	.name = "str " #v #s, \
+}
+
+#define STLD_PTR_STRB_S(v, s, dec_inc) \
+static const cpu_instr_t arm_strb_##v####s = \
+{ \
+	.name = "strb " #v #s, \
+}
+
+#define STLD_PTR_STRT_S(v, s, dec_inc) \
+static const cpu_instr_t arm_strt_##v####s = \
+{ \
+	.name = "strt " #v #s, \
+}
+
+#define STLD_PTR_STRBT_S(v, s, dec_inc) \
+static const cpu_instr_t arm_strbt_##v####s = \
+{ \
+	.name = "strbt " #v #s, \
+}
+
+#define STLD_PTR_LDR_S(v, s, dec_inc) \
+static const cpu_instr_t arm_ldr_##v####s = \
+{ \
+	.name = "ldr " #v #s, \
+}
+
+#define STLD_PTR_LDRB_S(v, s, dec_inc) \
+static const cpu_instr_t arm_ldrb_##v####s = \
+{ \
+	.name = "ldrb " #v #s, \
+}
+
+#define STLD_PTR_LDRT_S(v, s, dec_inc) \
+static const cpu_instr_t arm_ldrt_##v####s = \
+{ \
+	.name = "ldrt " #v #s, \
+}
+
+#define STLD_PTR_LDRBT_S(v, s, dec_inc) \
+static const cpu_instr_t arm_ldrbt_##v####s = \
+{ \
+	.name = "ldrbt " #v #s, \
+}
+
+#define STLD_PTR(v, dec_inc) \
+STLD_PTR_STR_S(v, ll, dec_inc); \
+STLD_PTR_STR_S(v, lr, dec_inc); \
+STLD_PTR_STR_S(v, ar, dec_inc); \
+STLD_PTR_STR_S(v, rr, dec_inc); \
+STLD_HDST(strh, v, 0, dec_inc, 0, 0, 0, 1); \
+STLD_HDST(strd, v, 0, dec_inc, 0, 0, 0, 3); \
+STLD_PTR_STRB_S(v, ll, dec_inc); \
+STLD_PTR_STRB_S(v, lr, dec_inc); \
+STLD_PTR_STRB_S(v, ar, dec_inc); \
+STLD_PTR_STRB_S(v, rr, dec_inc); \
+STLD_PTR_STRT_S(v, ll, dec_inc); \
+STLD_PTR_STRT_S(v, lr, dec_inc); \
+STLD_PTR_STRT_S(v, ar, dec_inc); \
+STLD_PTR_STRT_S(v, rr, dec_inc); \
+STLD_PTR_STRBT_S(v, ll, dec_inc); \
+STLD_PTR_STRBT_S(v, lr, dec_inc); \
+STLD_PTR_STRBT_S(v, ar, dec_inc); \
+STLD_PTR_STRBT_S(v, rr, dec_inc); \
+STLD_PTR_LDR_S(v, ll, dec_inc); \
+STLD_PTR_LDR_S(v, lr, dec_inc); \
+STLD_PTR_LDR_S(v, ar, dec_inc); \
+STLD_PTR_LDR_S(v, rr, dec_inc); \
+STLD_HDST(ldrh, v, 0, dec_inc, 0, 0, 1, 1); \
+STLD_HDST(ldrd, v, 0, dec_inc, 0, 0, 0, 2); \
+STLD_PTR_LDRB_S(v, ll, dec_inc); \
+STLD_PTR_LDRB_S(v, lr, dec_inc); \
+STLD_PTR_LDRB_S(v, ar, dec_inc); \
+STLD_PTR_LDRB_S(v, rr, dec_inc); \
+STLD_PTR_LDRT_S(v, ll, dec_inc); \
+STLD_PTR_LDRT_S(v, lr, dec_inc); \
+STLD_PTR_LDRT_S(v, ar, dec_inc); \
+STLD_PTR_LDRT_S(v, rr, dec_inc); \
+STLD_PTR_LDRBT_S(v, ll, dec_inc); \
+STLD_PTR_LDRBT_S(v, lr, dec_inc); \
+STLD_PTR_LDRBT_S(v, ar, dec_inc); \
+STLD_PTR_LDRBT_S(v, rr, dec_inc); \
+STLD_HDST(ldrsb, v, 0, dec_inc, 0, 0, 1, 2); \
+STLD_HDST(ldrsh, v, 0, dec_inc, 0, 0, 1, 3)
+
+STLD_PTR(ptrm, 0);
+STLD_PTR(ptrp, 1);
 
 #define STLD_PTI(v) \
 static const cpu_instr_t arm_str_##v = \
@@ -575,16 +726,40 @@ static const cpu_instr_t arm_ldrsb_##v = \
 static const cpu_instr_t arm_ldrsh_##v = \
 { \
 	.name = "ldrsh " #v, \
-}; \
+};
 
 STLD_PTI(ptim);
 STLD_PTI(ptip);
 
-#define STLD_OFR(v) \
-static const cpu_instr_t arm_str_##v##ll = \
+#define STLD_OFR_STR_S(v, s) \
+static const cpu_instr_t arm_str_##v####s = \
 { \
-	.name = "str " #v "ll", \
-}; \
+	.name = "str " #v #s, \
+}
+
+#define STLD_OFR_STRB_S(v, s) \
+static const cpu_instr_t arm_strb_##v####s = \
+{ \
+	.name = "strb " #v #s, \
+}
+
+#define STLD_OFR_LDR_S(v, s) \
+static const cpu_instr_t arm_ldr_##v####s = \
+{ \
+	.name = "ldr " #v #s, \
+}
+
+#define STLD_OFR_LDRB_S(v, s) \
+static const cpu_instr_t arm_ldrb_##v####s = \
+{ \
+	.name = "ldrb " #v #s, \
+}
+
+#define STLD_OFR(v) \
+STLD_OFR_STR_S(v, ll); \
+STLD_OFR_STR_S(v, lr); \
+STLD_OFR_STR_S(v, ar); \
+STLD_OFR_STR_S(v, rr); \
 static const cpu_instr_t arm_strh_##v = \
 { \
 	.name = "strh " #v, \
@@ -593,14 +768,14 @@ static const cpu_instr_t arm_strd_##v = \
 { \
 	.name = "strd " #v, \
 }; \
-static const cpu_instr_t arm_strb_##v##ll = \
-{ \
-	.name = "strb " #v "ll", \
-}; \
-static const cpu_instr_t arm_ldr_##v##ll = \
-{ \
-	.name = "ldr " #v "ll", \
-}; \
+STLD_OFR_STRB_S(v, ll); \
+STLD_OFR_STRB_S(v, lr); \
+STLD_OFR_STRB_S(v, ar); \
+STLD_OFR_STRB_S(v, rr); \
+STLD_OFR_LDR_S(v, ll); \
+STLD_OFR_LDR_S(v, lr); \
+STLD_OFR_LDR_S(v, ar); \
+STLD_OFR_LDR_S(v, rr); \
 static const cpu_instr_t arm_ldrh_##v = \
 { \
 	.name = "ldrh " #v, \
@@ -609,10 +784,10 @@ static const cpu_instr_t arm_ldrd_##v = \
 { \
 	.name = "ldrd " #v, \
 }; \
-static const cpu_instr_t arm_ldrb_##v##ll = \
-{ \
-	.name = "ldrb " #v "ll", \
-}; \
+STLD_OFR_LDRB_S(v, ll); \
+STLD_OFR_LDRB_S(v, lr); \
+STLD_OFR_LDRB_S(v, ar); \
+STLD_OFR_LDRB_S(v, rr); \
 static const cpu_instr_t arm_ldrsb_##v = \
 { \
 	.name = "ldrsb " #v, \
@@ -654,26 +829,32 @@ static const cpu_instr_t arm_ldrsh_##v = \
 STLD_PRR(prrm);
 STLD_PRR(prrp);
 
-#define STLD_PPR(v) \
-static const cpu_instr_t arm_str_##v##ll = \
+#define STLD_PPR(v, s) \
+static const cpu_instr_t arm_str_##v####s = \
 { \
-	.name = "str " #v "ll", \
+	.name = "str " #v #s, \
 }; \
-static const cpu_instr_t arm_strb_##v##ll = \
+static const cpu_instr_t arm_strb_##v####s = \
 { \
-	.name = "strb " #v "ll", \
+	.name = "strb " #v #s, \
 }; \
-static const cpu_instr_t arm_ldr_##v##ll = \
+static const cpu_instr_t arm_ldr_##v####s = \
 { \
-	.name = "ldr " #v "ll", \
+	.name = "ldr " #v #s, \
 }; \
-static const cpu_instr_t arm_ldrb_##v##ll = \
+static const cpu_instr_t arm_ldrb_##v####s = \
 { \
-	.name = "ldrb " #v "ll", \
+	.name = "ldrb " #v #s, \
 };
 
-STLD_PPR(pprm);
-STLD_PPR(pprp);
+STLD_PPR(pprm, ll);
+STLD_PPR(pprm, lr);
+STLD_PPR(pprm, ar);
+STLD_PPR(pprm, rr);
+STLD_PPR(pprp, ll);
+STLD_PPR(pprp, lr);
+STLD_PPR(pprp, ar);
+STLD_PPR(pprp, rr);
 
 #define STLD_OFI(v) \
 static const cpu_instr_t arm_str_##v = \
@@ -845,14 +1026,13 @@ static const cpu_instr_t arm_swpb =
 	.name = "swpb",
 };
 
-static bool exec_b(cpu_t *cpu)
+static void exec_b(cpu_t *cpu)
 {
 	int32_t v = cpu->instr_opcode & 0x7FFFFF;
 	if (cpu->instr_opcode & 0x800000)
 		v = -(~v & 0x7FFFFF);
-	cpu->regs.r[15] += 4 + 4 * v;
+	cpu->regs.r[15] += 4 * v;
 	cpu->instr_delay = 3;
-	return true;
 }
 
 static void print_b(cpu_t *cpu, char *data, size_t size)
@@ -875,12 +1055,11 @@ static const cpu_instr_t arm_bl =
 	.name = "bl",
 };
 
-static bool exec_bx(cpu_t *cpu)
+static void exec_bx(cpu_t *cpu)
 {
 	uint8_t rn = cpu->instr_opcode & 0xF;
 	cpu->regs.r[rn] |= 1;
 	cpu->thumb = true;
-	return true;
 }
 
 static const cpu_instr_t arm_bx =
@@ -951,13 +1130,13 @@ static const cpu_instr_t arm_undef =
 
 #define STLD_BLANK(v) \
 	REPEAT1(v##ll), REPEAT1(undef), \
+	REPEAT1(v##lr), REPEAT1(undef), \
+	REPEAT1(v##ar), REPEAT1(undef), \
+	REPEAT1(v##rr), REPEAT1(undef), \
 	REPEAT1(v##ll), REPEAT1(undef), \
-	REPEAT1(v##ll), REPEAT1(undef), \
-	REPEAT1(v##ll), REPEAT1(undef), \
-	REPEAT1(v##ll), REPEAT1(undef), \
-	REPEAT1(v##ll), REPEAT1(undef), \
-	REPEAT1(v##ll), REPEAT1(undef), \
-	REPEAT1(v##ll), REPEAT1(undef)
+	REPEAT1(v##lr), REPEAT1(undef), \
+	REPEAT1(v##ar), REPEAT1(undef), \
+	REPEAT1(v##rr), REPEAT1(undef)
 
 const cpu_instr_t *cpu_instr_arm[0x1000] =
 {

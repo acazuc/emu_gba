@@ -113,10 +113,10 @@ static bool next_instruction(cpu_t *cpu)
 	else
 	{
 		cpu->instr_opcode = mem_get32(cpu->mem, cpu->regs.r[15]);
-		cpu->regs.r[15] += 4;
 		if (!check_arm_cond(cpu, cpu->instr_opcode >> 28))
 		{
 			print_instr(cpu, "SKIP", cpu_instr_arm[((cpu->instr_opcode >> 16) & 0xFF0) | ((cpu->instr_opcode >> 4) & 0xF)]);
+			cpu->regs.r[15] += 4;
 			cpu->instr = NULL;
 			return false;
 		}
@@ -143,16 +143,14 @@ void cpu_cycle(cpu_t *cpu)
 	if (cpu->instr->exec)
 	{
 		print_instr(cpu, "EXEC", cpu->instr);
-		if (cpu->instr->exec(cpu))
-		{
-			if (!next_instruction(cpu))
-				return;
-		}
+		cpu->instr->exec(cpu);
 	}
 	else
 	{
 		print_instr(cpu, "UNIM", cpu->instr);
-		if (!next_instruction(cpu))
-			return;
 	}
+
+	cpu->regs.r[15] += 4;
+	if (!next_instruction(cpu))
+		return;
 }
