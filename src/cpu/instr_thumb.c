@@ -34,7 +34,7 @@ static const cpu_instr_t thumb_##n##_imm = \
 	.name = #n " imm", \
 	.exec = exec_##n##_imm, \
 	.print = print_##n##_imm, \
-};
+}
 
 #define THUMB_SHIFTED_LSL uint32_t rs = THUMB_LSL(rss, shift); if (shift) { CPU_SET_FLAG_C(cpu, rs & (1 << (32 - shift))); }
 #define THUMB_SHIFTED_LSR shift = shift ? shift : 32; uint32_t rs = THUMB_LSR(rss, shift); CPU_SET_FLAG_C(cpu, rss >> (shift - 1));
@@ -44,165 +44,340 @@ THUMB_SHIFTED(lsl, THUMB_SHIFTED_LSL);
 THUMB_SHIFTED(lsr, THUMB_SHIFTED_LSR);
 THUMB_SHIFTED(asr, THUMB_SHIFTED_ASR);
 
-static const cpu_instr_t thumb_add_reg =
-{
-	.name = "add reg",
-};
-
-static const cpu_instr_t thumb_sub_reg =
-{
-	.name = "sub reg",
-};
-
-static const cpu_instr_t thumb_add_imm3 =
-{
-	.name = "add imm3",
-};
-
-static const cpu_instr_t thumb_sub_imm3 =
-{
-	.name = "sub imm3",
-};
-
-#define THUMB_MOV_I8R(r) \
-static const cpu_instr_t thumb_mov_i8r##r = \
+#define THUMB_ADDSUBR(n, v, add_sub, reg_imm) \
+static void exec_##n##_##v(cpu_t *cpu) \
 { \
-	.name = "mov i8r" #r, \
-};
-
-THUMB_MOV_I8R(0);
-THUMB_MOV_I8R(1);
-THUMB_MOV_I8R(2);
-THUMB_MOV_I8R(3);
-THUMB_MOV_I8R(4);
-THUMB_MOV_I8R(5);
-THUMB_MOV_I8R(6);
-THUMB_MOV_I8R(7);
-
-#define THUMB_CMP_I8R(r) \
-static const cpu_instr_t thumb_cmp_i8r##r = \
+	uint32_t rsr = (cpu->instr_opcode >> 3) & 0x7; \
+	uint32_t rdr = (cpu->instr_opcode >> 0) & 0x7; \
+	uint32_t rs = cpu_get_reg(cpu, rsr); \
+	uint32_t val; \
+	if (reg_imm) \
+		val = (cpu->instr_opcode >> 6) & 0x7; \
+	else \
+		val = cpu_get_reg(cpu, (cpu->instr_opcode >> 6) & 0x7); \
+	if (add_sub) \
+	{ \
+		uint32_t res = rs - val; \
+		cpu_set_reg(cpu, rdr, res); \
+		CPU_SET_FLAG_N(cpu, res & 0x80000000); \
+		CPU_SET_FLAG_Z(cpu, !res); \
+		CPU_SET_FLAG_C(cpu, val > rs); \
+		CPU_SET_FLAG_V(cpu, ((rs ^ val) & 0x80000000) && ((rs ^ res) & 0x80000000)); \
+	} \
+	else \
+	{ \
+		uint32_t res = rs + val; \
+		cpu_set_reg(cpu, rdr, res); \
+		CPU_SET_FLAG_N(cpu, res & 0x80000000); \
+		CPU_SET_FLAG_Z(cpu, !res); \
+		CPU_SET_FLAG_C(cpu, res < rs); \
+		CPU_SET_FLAG_V(cpu, ((rs ^ val) & 0x80000000) && ((rs ^ res) & 0x80000000)); \
+	} \
+	cpu_inc_pc(cpu, 2); \
+	cpu->instr_delay = 1; \
+} \
+static void print_##n##_##v(cpu_t *cpu, char *data, size_t size) \
 { \
-	.name = "cmp i8r" #r, \
-};
-
-THUMB_CMP_I8R(0);
-THUMB_CMP_I8R(1);
-THUMB_CMP_I8R(2);
-THUMB_CMP_I8R(3);
-THUMB_CMP_I8R(4);
-THUMB_CMP_I8R(5);
-THUMB_CMP_I8R(6);
-THUMB_CMP_I8R(7);
-
-#define THUMB_ADD_I8R(r) \
-static const cpu_instr_t thumb_add_i8r##r = \
+	uint32_t rsr = (cpu->instr_opcode >> 3) & 0x7; \
+	uint32_t rdr = (cpu->instr_opcode >> 0) & 0x7; \
+	uint32_t val = (cpu->instr_opcode >> 6) & 0x7; \
+	if (reg_imm) \
+		snprintf(data, size, #n " r%d, r%d, #0x%x", rdr, rsr, val); \
+	else \
+		snprintf(data, size, #n " r%d, r%d, r%d", rdr, rsr, val); \
+} \
+static const cpu_instr_t thumb_##n##_##v = \
 { \
-	.name = "add i8r" #r, \
-};
+	.name = #n " " #v, \
+	.exec = exec_##n##_##v, \
+	.print = print_##n##_##v, \
+}
 
-THUMB_ADD_I8R(0);
-THUMB_ADD_I8R(1);
-THUMB_ADD_I8R(2);
-THUMB_ADD_I8R(3);
-THUMB_ADD_I8R(4);
-THUMB_ADD_I8R(5);
-THUMB_ADD_I8R(6);
-THUMB_ADD_I8R(7);
+THUMB_ADDSUBR(add, reg, 0, 0);
+THUMB_ADDSUBR(sub, reg, 1, 0);
+THUMB_ADDSUBR(add, imm, 0, 1);
+THUMB_ADDSUBR(sub, imm, 1, 1);
 
-#define THUMB_SUB_I8R(r) \
-static const cpu_instr_t thumb_sub_i8r##r = \
+static void mcas_mov(cpu_t *cpu, uint32_t r, uint32_t nn)
+{
+	cpu_set_reg(cpu, r, nn);
+	CPU_SET_FLAG_Z(cpu, !nn);
+	CPU_SET_FLAG_N(cpu, nn & 0x80000000);
+}
+
+static void mcas_cmp(cpu_t *cpu, uint32_t r, uint32_t nn)
+{
+	uint32_t rv = cpu_get_reg(cpu, r);
+	uint32_t res = rv - nn;
+	CPU_SET_FLAG_Z(cpu, !res);
+	CPU_SET_FLAG_N(cpu, res & 0x80000000);
+	CPU_SET_FLAG_C(cpu, nn > rv);
+	CPU_SET_FLAG_V(cpu, ((rv ^ nn) & 0x80000000) && ((rv ^ res) & 0x80000000));
+}
+
+static void mcas_add(cpu_t *cpu, uint32_t r, uint32_t nn)
+{
+	uint32_t rv = cpu_get_reg(cpu, r);
+	uint32_t res = rv + nn;
+	cpu_set_reg(cpu, r, res);
+	CPU_SET_FLAG_Z(cpu, !res);
+	CPU_SET_FLAG_N(cpu, res & 0x80000000);
+	CPU_SET_FLAG_C(cpu, res < nn);
+	CPU_SET_FLAG_V(cpu, ((rv ^ nn) & 0x80000000) && ((rv ^ res) & 0x80000000));
+}
+
+static void mcas_sub(cpu_t *cpu, uint32_t r, uint32_t nn)
+{
+	uint32_t rv = cpu_get_reg(cpu, r);
+	uint32_t res = rv - nn;
+	cpu_set_reg(cpu, r, res);
+	CPU_SET_FLAG_Z(cpu, !res);
+	CPU_SET_FLAG_N(cpu, res & 0x80000000);
+	CPU_SET_FLAG_C(cpu, nn > rv);
+	CPU_SET_FLAG_V(cpu, ((rv ^ nn) & 0x80000000) && ((rv ^ res) & 0x80000000));
+}
+
+#define THUMB_MCAS_I8R(n, r) \
+static void exec_##n##_i8r##r(cpu_t *cpu) \
 { \
-	.name = "sub i8r" #r, \
-};
+	uint32_t nn = cpu->instr_opcode & 0xFF; \
+	mcas_##n(cpu, r, nn); \
+	cpu_inc_pc(cpu, 2); \
+	cpu->instr_delay = 1; \
+} \
+static void print_##n##_i8r##r(cpu_t *cpu, char *data, size_t size) \
+{ \
+	uint32_t nn = cpu->instr_opcode & 0xFF; \
+	snprintf(data, size, #n " r%d, #0x%x", r, nn); \
+} \
+static const cpu_instr_t thumb_##n##_i8r##r = \
+{ \
+	.name = #n " i8r" #r, \
+	.exec = exec_##n##_i8r##r, \
+	.print = print_##n##_i8r##r, \
+}
 
-THUMB_SUB_I8R(0);
-THUMB_SUB_I8R(1);
-THUMB_SUB_I8R(2);
-THUMB_SUB_I8R(3);
-THUMB_SUB_I8R(4);
-THUMB_SUB_I8R(5);
-THUMB_SUB_I8R(6);
-THUMB_SUB_I8R(7);
+THUMB_MCAS_I8R(mov, 0);
+THUMB_MCAS_I8R(mov, 1);
+THUMB_MCAS_I8R(mov, 2);
+THUMB_MCAS_I8R(mov, 3);
+THUMB_MCAS_I8R(mov, 4);
+THUMB_MCAS_I8R(mov, 5);
+THUMB_MCAS_I8R(mov, 6);
+THUMB_MCAS_I8R(mov, 7);
+THUMB_MCAS_I8R(cmp, 0);
+THUMB_MCAS_I8R(cmp, 1);
+THUMB_MCAS_I8R(cmp, 2);
+THUMB_MCAS_I8R(cmp, 3);
+THUMB_MCAS_I8R(cmp, 4);
+THUMB_MCAS_I8R(cmp, 5);
+THUMB_MCAS_I8R(cmp, 6);
+THUMB_MCAS_I8R(cmp, 7);
+THUMB_MCAS_I8R(add, 0);
+THUMB_MCAS_I8R(add, 1);
+THUMB_MCAS_I8R(add, 2);
+THUMB_MCAS_I8R(add, 3);
+THUMB_MCAS_I8R(add, 4);
+THUMB_MCAS_I8R(add, 5);
+THUMB_MCAS_I8R(add, 6);
+THUMB_MCAS_I8R(add, 7);
+THUMB_MCAS_I8R(sub, 0);
+THUMB_MCAS_I8R(sub, 1);
+THUMB_MCAS_I8R(sub, 2);
+THUMB_MCAS_I8R(sub, 3);
+THUMB_MCAS_I8R(sub, 4);
+THUMB_MCAS_I8R(sub, 5);
+THUMB_MCAS_I8R(sub, 6);
+THUMB_MCAS_I8R(sub, 7);
 
-static const cpu_instr_t thumb_alu_and =
+static void alu_flags_logical(cpu_t *cpu, uint32_t v)
 {
-	.name = "and",
-};
+	CPU_SET_FLAG_N(cpu, v & 0x80000000);
+	CPU_SET_FLAG_Z(cpu, !v);
+}
 
-static const cpu_instr_t thumb_alu_eor =
+static void alu_flags_arithmetical(cpu_t *cpu, uint32_t v, uint32_t op1, uint32_t op2)
 {
-	.name = "eor",
-};
+	CPU_SET_FLAG_V(cpu, ((op1 ^ op2) & 0x80000000) && ((op1 ^ v) & 0x80000000));
+	CPU_SET_FLAG_N(cpu, v & 0x80000000);
+	CPU_SET_FLAG_Z(cpu, !v);
+}
 
-static const cpu_instr_t thumb_alu_lsl =
+static void alu_and(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "lsl",
-};
+	uint32_t v = cpu_get_reg(cpu, rd) & rs;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+}
 
-static const cpu_instr_t thumb_alu_lsr =
+static void alu_eor(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "lsr",
-};
+	uint32_t v = cpu_get_reg(cpu, rd) ^ rs;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+}
 
-static const cpu_instr_t thumb_alu_asr =
+static void alu_lsr(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "asr",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = THUMB_LSR(reg, rs);
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+	if (rs)
+		CPU_SET_FLAG_C(cpu, reg & (1 << (rs - 1)));
+}
 
-static const cpu_instr_t thumb_alu_add =
+static void alu_lsl(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "add",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = THUMB_LSL(reg, rs);
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+	if (rs)
+		CPU_SET_FLAG_C(cpu, reg & (1 << (32 - rs)));
+}
 
-static const cpu_instr_t thumb_alu_sub =
+static void alu_asr(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "sub",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = THUMB_ASR(reg, rs);
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+	if (rs)
+		CPU_SET_FLAG_C(cpu, reg & (1 << (32 - rs)));
+}
 
-static const cpu_instr_t thumb_alu_ror =
+static void alu_adc(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "ror",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t c = CPU_GET_FLAG_C(cpu);
+	uint32_t v = reg + rs + c;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_arithmetical(cpu, v, reg, rs);
+	CPU_SET_FLAG_C(cpu, c ? v <= reg : v < reg);
+}
 
-static const cpu_instr_t thumb_alu_tst =
+static void alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "tst",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t c = CPU_GET_FLAG_C(cpu);
+	uint32_t v = reg - rs + c - 1;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_arithmetical(cpu, v, reg, rs);
+	CPU_SET_FLAG_C(cpu, c ? rs >= reg : rs > reg);
+}
 
-static const cpu_instr_t thumb_alu_neg =
+static void alu_ror(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "neg",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = THUMB_ROR(reg, rs);
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+	if (rs)
+		CPU_SET_FLAG_C(cpu, reg & (1 << (rs - 1)));
+}
 
-static const cpu_instr_t thumb_alu_cmp =
+static void alu_tst(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "cmp",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = reg & rs;
+	alu_flags_logical(cpu, v);
+}
 
-static const cpu_instr_t thumb_alu_cmn =
+static void alu_neg(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "cmn",
-};
+	uint32_t v = -rs;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_arithmetical(cpu, v, 0, rs);
+	CPU_SET_FLAG_C(cpu, rs > 0);
+}
 
-static const cpu_instr_t thumb_alu_orr =
+static void alu_cmp(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "orr",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = reg - rs;
+	alu_flags_arithmetical(cpu, v, reg, rs);
+	CPU_SET_FLAG_C(cpu, rs > reg);
+}
 
-static const cpu_instr_t thumb_alu_mul =
+static void alu_cmn(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "mul",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = reg + rs;
+	alu_flags_arithmetical(cpu, v, reg, rs);
+	CPU_SET_FLAG_C(cpu, v < reg);
+}
 
-static const cpu_instr_t thumb_alu_bic =
+static void alu_orr(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "bic",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = reg | rs;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+}
 
-static const cpu_instr_t thumb_alu_mvn =
+static void alu_mul(cpu_t *cpu, uint32_t rd, uint32_t rs)
 {
-	.name = "mvn",
-};
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = reg * rs;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+}
+
+static void alu_bic(cpu_t *cpu, uint32_t rd, uint32_t rs)
+{
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = reg & ~rs;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+}
+
+static void alu_mvn(cpu_t *cpu, uint32_t rd, uint32_t rs)
+{
+	uint32_t reg = cpu_get_reg(cpu, rd);
+	uint32_t v = ~rs;
+	cpu_set_reg(cpu, rd, v);
+	alu_flags_logical(cpu, v);
+}
+
+#define THUMB_ALU(n) \
+static void exec_alu_##n(cpu_t *cpu) \
+{ \
+	uint32_t rd = (cpu->instr_opcode >> 0) & 0x7; \
+	uint32_t rs = (cpu->instr_opcode >> 3) & 0x7; \
+	alu_##n(cpu, rd, rs); \
+	cpu_inc_pc(cpu, 2); \
+	cpu->instr_delay = 1; \
+} \
+static void print_alu_##n(cpu_t *cpu, char *data, size_t size) \
+{ \
+	uint32_t rd = (cpu->instr_opcode >> 0) & 0x7; \
+	uint32_t rs = (cpu->instr_opcode >> 3) & 0x7; \
+	snprintf(data, size, #n " r%d, r%d", rd, rs); \
+} \
+static const cpu_instr_t thumb_alu_##n = \
+{ \
+	.name = #n, \
+	.exec = exec_alu_##n, \
+	.print = print_alu_##n, \
+}
+
+THUMB_ALU(and);
+THUMB_ALU(eor);
+THUMB_ALU(lsr);
+THUMB_ALU(lsl);
+THUMB_ALU(asr);
+THUMB_ALU(adc);
+THUMB_ALU(sbc);
+THUMB_ALU(ror);
+THUMB_ALU(tst);
+THUMB_ALU(neg);
+THUMB_ALU(cmp);
+THUMB_ALU(cmn);
+THUMB_ALU(orr);
+THUMB_ALU(mul);
+THUMB_ALU(bic);
+THUMB_ALU(mvn);
 
 static const cpu_instr_t thumb_addh =
 {
@@ -313,7 +488,7 @@ static const cpu_instr_t thumb_ldrh_imm5 =
 static const cpu_instr_t thumb_strsp_r##r = \
 { \
 	.name = "strsp r" #r, \
-};
+}
 
 THUMB_STRSP_R(0);
 THUMB_STRSP_R(1);
@@ -328,7 +503,7 @@ THUMB_STRSP_R(7);
 static const cpu_instr_t thumb_ldrsp_r##r = \
 { \
 	.name = "ldrsp r" #r, \
-};
+}
 
 THUMB_LDRSP_R(0);
 THUMB_LDRSP_R(1);
@@ -343,7 +518,7 @@ THUMB_LDRSP_R(7);
 static const cpu_instr_t thumb_addpc_r##r = \
 { \
 	.name = "addpc r" #r, \
-};
+}
 
 THUMB_ADDPC_R(0);
 THUMB_ADDPC_R(1);
@@ -358,7 +533,7 @@ THUMB_ADDPC_R(7);
 static const cpu_instr_t thumb_addsp_r##r = \
 { \
 	.name = "addsp r" #r, \
-};
+}
 
 THUMB_ADDSP_R(0);
 THUMB_ADDSP_R(1);
@@ -403,7 +578,7 @@ static const cpu_instr_t thumb_bkpt =
 static const cpu_instr_t thumb_stmia_r##r = \
 { \
 	.name = "stmia r" #r, \
-};
+}
 
 THUMB_STMIA_R(0);
 THUMB_STMIA_R(1);
@@ -418,7 +593,7 @@ THUMB_STMIA_R(7);
 static const cpu_instr_t thumb_ldmia_r##r = \
 { \
 	.name = "ldmia r" #r, \
-};
+}
 
 THUMB_LDMIA_R(0);
 THUMB_LDMIA_R(1);
@@ -543,8 +718,8 @@ const cpu_instr_t *cpu_instr_thumb[0x400] =
 	/* 0x040 */ REPEAT32(asr_imm),
 	/* 0x060 */ REPEAT8(add_reg),
 	/* 0x068 */ REPEAT8(sub_reg),
-	/* 0x070 */ REPEAT8(add_imm3),
-	/* 0x078 */ REPEAT8(sub_imm3),
+	/* 0x070 */ REPEAT8(add_imm),
+	/* 0x078 */ REPEAT8(sub_imm),
 	/* 0x080 */ REPEAT4(mov_i8r0),
 	/* 0x084 */ REPEAT4(mov_i8r1),
 	/* 0x088 */ REPEAT4(mov_i8r2),
@@ -582,8 +757,8 @@ const cpu_instr_t *cpu_instr_thumb[0x400] =
 	/* 0x102 */ REPEAT1(alu_lsl),
 	/* 0x103 */ REPEAT1(alu_lsr),
 	/* 0x104 */ REPEAT1(alu_asr),
-	/* 0x105 */ REPEAT1(alu_add),
-	/* 0x106 */ REPEAT1(alu_sub),
+	/* 0x105 */ REPEAT1(alu_adc),
+	/* 0x106 */ REPEAT1(alu_sbc),
 	/* 0x107 */ REPEAT1(alu_ror),
 	/* 0x108 */ REPEAT1(alu_tst),
 	/* 0x109 */ REPEAT1(alu_neg),

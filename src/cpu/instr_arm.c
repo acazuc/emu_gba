@@ -104,12 +104,13 @@ static void exec_alu_adc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_adcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
-	uint32_t v = op1 + op2 + CPU_GET_FLAG_C(cpu);
+	uint32_t c = CPU_GET_FLAG_C(cpu);
+	uint32_t v = op1 + op2 + c;
 	cpu_set_reg(cpu, rd, v);
 	if (rd != 0xF)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op1, op2);
-		CPU_SET_FLAG_C(cpu, CPU_GET_FLAG_C(cpu) ? v <= op1 : v < op1);
+		CPU_SET_FLAG_C(cpu, c ? v <= op1 : v < op1);
 	}
 }
 
@@ -120,12 +121,13 @@ static void exec_alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_sbcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
-	uint32_t v = op1 - op2 + CPU_GET_FLAG_C(cpu) - 1;
+	uint32_t c = CPU_GET_FLAG_C(cpu);
+	uint32_t v = op1 - op2 + c - 1;
 	cpu_set_reg(cpu, rd, v);
 	if (rd != 0xF)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op1, op2);
-		CPU_SET_FLAG_C(cpu, op2 + 1 - CPU_GET_FLAG_C(cpu) > op1);
+		CPU_SET_FLAG_C(cpu, c ? op2 >= op1 : op2 > op1);
 	}
 }
 
@@ -136,12 +138,13 @@ static void exec_alu_rsc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_rscs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
-	uint32_t v = op2 - op1 + CPU_GET_FLAG_C(cpu) - 1;
+	uint32_t c = CPU_GET_FLAG_C(cpu);
+	uint32_t v = op2 - op1 + c - 1;
 	cpu_set_reg(cpu, rd, v);
 	if (rd != 0xF)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op2, op1);
-		CPU_SET_FLAG_C(cpu, op1 + 1 - CPU_GET_FLAG_C(cpu) > op2);
+		CPU_SET_FLAG_C(cpu, op1 + 1 - c > op2);
 	}
 }
 
@@ -195,11 +198,13 @@ static void exec_alu_orrs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_mov(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
+	(void)op1;
 	cpu_set_reg(cpu, rd, op2);
 }
 
 static void exec_alu_movs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
+	(void)op1;
 	uint32_t v = op2;
 	cpu_set_reg(cpu, rd, v);
 	if (rd != 0xF)
@@ -221,11 +226,13 @@ static void exec_alu_bics(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 
 static void exec_alu_mvn(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
+	(void)op1;
 	cpu_set_reg(cpu, rd, ~op2);
 }
 
 static void exec_alu_mvns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
+	(void)op1;
 	uint32_t v = ~op2;
 	cpu_set_reg(cpu, rd, v);
 	if (rd != 0xF)
