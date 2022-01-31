@@ -1,19 +1,48 @@
 #include "instr_thumb.h"
+#include "../cpu.h"
+#include <stdint.h>
+#include <stdio.h>
 
-static const cpu_instr_t thumb_lsl_imm =
-{
-	.name = "lsl imm",
+#define THUMB_LSL(v, s) ((v) << (s))
+#define THUMB_LSR(v, s) ((v) >> (s))
+#define THUMB_ASR(v, s) ((int32_t)(v) >> (s))
+#define THUMB_ROR(v, s) (((v) >> (s)) | ((v) << (32 - (s))))
+
+#define THUMB_SHIFTED(n, shiftop) \
+static void exec_##n##_imm(cpu_t *cpu) \
+{ \
+	uint32_t shift = (cpu->instr_opcode >> 6) & 0x1F; \
+	uint32_t rsr = (cpu->instr_opcode >> 3) & 0x7; \
+	uint32_t rdr = (cpu->instr_opcode >> 0) & 0x7; \
+	uint32_t rss = cpu_get_reg(cpu, rsr); \
+	shiftop; \
+	cpu_set_reg(cpu, rdr, rs); \
+	CPU_SET_FLAG_Z(cpu, !rs); \
+	CPU_SET_FLAG_N(cpu, rs & 0x80000000); \
+	cpu_inc_pc(cpu, 2); \
+	cpu->instr_delay = 1; \
+} \
+static void print_##n##_imm(cpu_t *cpu, char *data, size_t size) \
+{ \
+	uint32_t shift = (cpu->instr_opcode >> 6) & 0x1F; \
+	uint32_t rsr = (cpu->instr_opcode >> 3) & 0x7; \
+	uint32_t rdr = (cpu->instr_opcode >> 0) & 0x7; \
+	snprintf(data, size, #n " r%d, r%d, #0x%x", rdr, rsr, shift); \
+} \
+static const cpu_instr_t thumb_##n##_imm = \
+{ \
+	.name = #n " imm", \
+	.exec = exec_##n##_imm, \
+	.print = print_##n##_imm, \
 };
 
-static const cpu_instr_t thumb_lsr_imm =
-{
-	.name = "lsr imm",
-};
+#define THUMB_SHIFTED_LSL uint32_t rs = THUMB_LSL(rss, shift); if (shift) { CPU_SET_FLAG_C(cpu, rs & (1 << (32 - shift))); }
+#define THUMB_SHIFTED_LSR shift = shift ? shift : 32; uint32_t rs = THUMB_LSR(rss, shift); CPU_SET_FLAG_C(cpu, rss >> (shift - 1));
+#define THUMB_SHIFTED_ASR shift = shift ? shift : 32; uint32_t rs = THUMB_ASR(rss, shift); CPU_SET_FLAG_C(cpu, rss >> (shift - 1));
 
-static const cpu_instr_t thumb_asr_imm =
-{
-	.name = "asr imm",
-};
+THUMB_SHIFTED(lsl, THUMB_SHIFTED_LSL);
+THUMB_SHIFTED(lsr, THUMB_SHIFTED_LSR);
+THUMB_SHIFTED(asr, THUMB_SHIFTED_ASR);
 
 static const cpu_instr_t thumb_add_reg =
 {

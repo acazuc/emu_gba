@@ -16,7 +16,7 @@ typedef struct mem_s mem_t;
 #define CPU_FLAG_F (1 << 6)
 #define CPU_FLAG_T (1 << 5)
 
-#define CPU_GET_FLAG(cpu, f) ((cpu->regs.cpsr & f) ? 1 : 0)
+#define CPU_GET_FLAG(cpu, f) (((cpu)->regs.cpsr & (f)) ? 1 : 0)
 #define CPU_GET_FLAG_N(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_N)
 #define CPU_GET_FLAG_Z(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_Z)
 #define CPU_GET_FLAG_C(cpu) CPU_GET_FLAG(cpu, CPU_FLAG_C)
@@ -30,9 +30,9 @@ typedef struct mem_s mem_t;
 do \
 { \
 	if (v) \
-		cpu->regs.cpsr |= f; \
+		(cpu)->regs.cpsr |= f; \
 	else \
-		cpu->regs.cpsr &= ~f; \
+		(cpu)->regs.cpsr &= ~f; \
 } while (0)
 #define CPU_SET_FLAG_N(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_N, v)
 #define CPU_SET_FLAG_Z(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_Z, v)
@@ -43,6 +43,16 @@ do \
 #define CPU_SET_FLAG_F(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_F, v)
 #define CPU_SET_FLAG_T(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_T, v)
 
+#define CPU_GET_MODE(cpu) ((cpu)->regs.cpsr & 0xF)
+
+#define CPU_MODE_USR 0x0
+#define CPU_MODE_FIQ 0x1
+#define CPU_MODE_IRQ 0x2
+#define CPU_MODE_SVC 0x3
+#define CPU_MODE_ABT 0x7
+#define CPU_MODE_UND 0xB
+#define CPU_MODE_SYS 0xF
+
 typedef struct cpu_regs_s
 {
 	uint32_t r[16];
@@ -52,28 +62,14 @@ typedef struct cpu_regs_s
 	uint32_t r_irq[2];
 	uint32_t r_und[2];
 	uint32_t cpsr;
-	uint32_t spsr_fiq;
-	uint32_t spsr_svc;
-	uint32_t spsr_abt;
-	uint32_t spsr_irq;
-	uint32_t spsr_und;
+	uint32_t spsr_modes[6];
+	uint32_t *rptr[16];
+	uint32_t *spsr;
 } cpu_regs_t;
-
-enum cpu_mode
-{
-	CPU_MODE_SYS,
-	CPU_MODE_FIQ,
-	CPU_MODE_SVC,
-	CPU_MODE_ABT,
-	CPU_MODE_IEQ,
-	CPU_MODE_UND,
-};
 
 typedef struct cpu_s
 {
 	cpu_regs_t regs;
-	enum cpu_mode mode;
-	bool thumb;
 	mem_t *mem;
 	const cpu_instr_t *instr;
 	uint32_t instr_opcode;
@@ -84,5 +80,21 @@ cpu_t *cpu_new(mem_t *mem);
 void cpu_del(cpu_t *cpu);
 
 void cpu_cycle(cpu_t *cpu);
+void cpu_update_mode(cpu_t *cpu);
+
+static inline uint32_t cpu_get_reg(cpu_t *cpu, uint32_t reg)
+{
+	return *cpu->regs.rptr[reg];
+}
+
+static inline void cpu_set_reg(cpu_t *cpu, uint32_t reg, uint32_t v)
+{
+	*cpu->regs.rptr[reg] = v;
+}
+
+static inline void cpu_inc_pc(cpu_t *cpu, uint32_t v)
+{
+	*cpu->regs.rptr[15] += v;
+}
 
 #endif

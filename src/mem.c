@@ -63,7 +63,7 @@ void *mem_ptr(mem_t *mem, uint32_t addr)
 			break;
 		case 0x6: //vram
 			if (addr < 0x6018000)
-				return &mem->vram[addr - 0x6018000];
+				return &mem->vram[addr - 0x6000000];
 			break;
 		case 0x7: //oam
 			if (addr < 0x7000400)

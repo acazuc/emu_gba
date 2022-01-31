@@ -13,6 +13,7 @@ cpu_t *cpu_new(mem_t *mem)
 		return NULL;
 
 	cpu->mem = mem;
+	cpu_update_mode(cpu);
 	return cpu;
 }
 
@@ -78,7 +79,7 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 	rtmp = regs;
 	for (unsigned i = 0; i < 16; ++i)
 	{
-		snprintf(rtmp, 13, "R%02u=%08x", i, cpu->regs.r[i]);
+		snprintf(rtmp, 13, "r%02u=%08x", i, cpu_get_reg(cpu, i));
 		rtmp += 12;
 		if (i == 15)
 			break;
@@ -96,7 +97,7 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 
 	printf("[%-4s] [%08x] %-30s (%08x) %s\n\n",
 	        msg,
-	        cpu->regs.r[15],
+	        cpu_get_reg(cpu, 15),
 	        tmp,
 	        cpu->instr_opcode,
 	        regs);
@@ -104,18 +105,18 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 
 static bool next_instruction(cpu_t *cpu)
 {
-	if (cpu->thumb)
+	if (CPU_GET_FLAG_T(cpu))
 	{
-		cpu->instr_opcode = mem_get16(cpu->mem, cpu->regs.r[15]);
-		cpu->instr = cpu_instr_thumb[cpu->instr_opcode >> 8];
+		cpu->instr_opcode = mem_get16(cpu->mem, cpu_get_reg(cpu, 15));
+		cpu->instr = cpu_instr_thumb[cpu->instr_opcode >> 6];
 	}
 	else
 	{
-		cpu->instr_opcode = mem_get32(cpu->mem, cpu->regs.r[15]);
+		cpu->instr_opcode = mem_get32(cpu->mem, cpu_get_reg(cpu, 15));
 		if (!check_arm_cond(cpu, cpu->instr_opcode >> 28))
 		{
 			print_instr(cpu, "SKIP", cpu_instr_arm[((cpu->instr_opcode >> 16) & 0xFF0) | ((cpu->instr_opcode >> 4) & 0xF)]);
-			cpu->regs.r[15] += 4;
+			cpu_inc_pc(cpu, 4);
 			cpu->instr = NULL;
 			return false;
 		}
@@ -127,10 +128,14 @@ static bool next_instruction(cpu_t *cpu)
 
 void cpu_cycle(cpu_t *cpu)
 {
-	if (cpu->instr_delay)
+	switch (cpu->instr_delay)
 	{
-		cpu->instr_delay--;
-		return;
+		case 0:
+		case 1:
+			break;
+		default:
+			cpu->instr_delay--;
+			return;
 	}
 
 	if (!cpu->instr)
@@ -147,9 +152,47 @@ void cpu_cycle(cpu_t *cpu)
 	else
 	{
 		print_instr(cpu, "UNIM", cpu->instr);
-		cpu->regs.r[15] += cpu->thumb ? 2 : 4;
+		cpu->regs.r[15] += CPU_GET_FLAG_T(cpu) ? 2 : 4;
 	}
 
 	if (!next_instruction(cpu))
 		return;
+}
+
+void cpu_update_mode(cpu_t *cpu)
+{
+	for (size_t i = 0; i < 16; ++i)
+		cpu->regs.rptr[i] = &cpu->regs.r[i];
+	switch (CPU_GET_MODE(cpu))
+	{
+		case CPU_MODE_USR:
+		case CPU_MODE_SYS:
+			cpu->regs.spsr = &cpu->regs.spsr_modes[0];
+			break;
+		case CPU_MODE_FIQ:
+			for (size_t i = 8; i < 15; ++i)
+				cpu->regs.rptr[i] = &cpu->regs.r_fiq[i - 8];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[1];
+			break;
+		case CPU_MODE_SVC:
+			for (size_t i = 13; i < 15; ++i)
+				cpu->regs.rptr[i] = &cpu->regs.r_svc[i - 13];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[2];
+			break;
+		case CPU_MODE_ABT:
+			for (size_t i = 13; i < 15; ++i)
+				cpu->regs.rptr[i] = &cpu->regs.r_abt[i - 13];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[3];
+			break;
+		case CPU_MODE_IRQ:
+			for (size_t i = 13; i < 15; ++i)
+				cpu->regs.rptr[i] = &cpu->regs.r_irq[i - 13];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[4];
+			break;
+		case CPU_MODE_UND:
+			for (size_t i = 13; i < 15; ++i)
+				cpu->regs.rptr[i] = &cpu->regs.r_und[i - 13];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[5];
+			break;
+	}
 }
