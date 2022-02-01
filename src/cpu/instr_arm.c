@@ -243,10 +243,10 @@ static void exec_alu_mvns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
 	uint32_t op1r = (cpu->instr_opcode >> 16) & 0xF; \
 	uint32_t op1 = cpu->regs.r[op1r]; \
-	op1 += op1r == 15 ? pcoff : 0; \
+	op1 += (op1r == CPU_REG_PC) ? pcoff : 0; \
 	uint32_t op2r = (cpu->instr_opcode >>  0) & 0xF; \
 	uint32_t op2s = cpu->regs.r[op2r]; \
-	op2s += op2r == 15 ? pcoff : 0
+	op2s += (op2r == CPU_REG_PC) ? pcoff : 0
 
 #define ARM_ALU_DECODEI(cpu) \
 	uint8_t shift = (cpu->instr_opcode >> 7) & 0x1F; \
@@ -268,7 +268,7 @@ static void exec_##op##_##rot##i(cpu_t *cpu) \
 	ARM_ALU_DECODEI(cpu); \
 	rot_opi \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	if (rd != 0xF) \
+	if (rd != CPU_REG_PC) \
 		cpu_inc_pc(cpu, 4); \
 } \
 static void print_##op##_##rot##i(cpu_t *cpu, char *data, size_t size) \
@@ -287,7 +287,7 @@ static void exec_##op##_##rot##r(cpu_t *cpu) \
 	ARM_ALU_DECODER(cpu); \
 	rot_opr \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	if (rd != 0xF) \
+	if (rd != CPU_REG_PC) \
 		cpu_inc_pc(cpu, 4); \
 } \
 static void print_##op##_##rot##r(cpu_t *cpu, char *data, size_t size) \
@@ -331,11 +331,13 @@ static void exec_##op##_imm(cpu_t *cpu) \
 { \
 	uint32_t shift = (cpu->instr_opcode >> 8) & 0xF; \
 	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
-	uint32_t op1 = cpu->regs.r[(cpu->instr_opcode >> 16) & 0xF]; \
+	uint32_t op1r = (cpu->instr_opcode >> 16) & 0xF; \
+	uint32_t op1 = cpu->regs.r[op1r]; \
+	op1 += (op1r == CPU_REG_PC) ? 8 : 0; \
 	uint32_t op2s = (cpu->instr_opcode >> 0) & 0xFF; \
 	uint32_t op2 = ARM_ROR(op2s, shift * 2); \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	if (rd != 0xF) \
+	if (rd != CPU_REG_PC) \
 		cpu_inc_pc(cpu, 4); \
 } \
 static void print_##op##_imm(cpu_t *cpu, char *data, size_t size) \
@@ -520,12 +522,12 @@ static const cpu_instr_t arm_smulwt =
 #define STLD_ROT_RR offset = ARM_ROR(rm, shift)
 #define STLD_ROT_NO offset = rm
 
-#define STLD_BTBT(opname, oparg, rotname, imm_reg, post_pre, dec_inc, byte_word, writeback_mm, st_ld, regshift) \
+#define STLD_BTBT(opname, oparg, rotname, imm_reg, post_pre, dec_inc, word_byte, writeback_mm, st_ld, regshift) \
 static void exec_##opname##_##oparg####rotname(cpu_t *cpu) \
 { \
 	uint32_t rnr = (cpu->instr_opcode >> 16) & 0xF; \
 	uint32_t rn = cpu_get_reg(cpu, rnr); \
-	rn += (rnr == 15) ? 8 : 0; \
+	rn += (rnr == CPU_REG_PC) ? 8 : 0; \
 	uint32_t rdr = (cpu->instr_opcode >> 12) & 0xF; \
 	uint32_t offset; \
 	if (imm_reg) \
@@ -551,20 +553,20 @@ static void exec_##opname##_##oparg####rotname(cpu_t *cpu) \
 	if (st_ld) \
 	{ \
 		uint32_t v; \
-		if (byte_word) \
-			v = mem_get32(cpu->mem, rn); \
-		else \
+		if (word_byte) \
 			v = mem_get8(cpu->mem, rn); \
+		else \
+			v = mem_get32(cpu->mem, rn); \
 		cpu_set_reg(cpu, rdr, v); \
 	} \
 	else \
 	{ \
 		uint32_t rd = cpu_get_reg(cpu, rdr); \
-		rd += (rdr == 15) ? 12 : 0; \
-		if (byte_word) \
-			mem_set32(cpu->mem, rn, rd); \
-		else \
+		rd += (rdr == CPU_REG_PC) ? 12 : 0; \
+		if (word_byte) \
 			mem_set8(cpu->mem, rn, rd); \
+		else \
+			mem_set32(cpu->mem, rn, rd); \
 	} \
 	if (!post_pre && (!st_ld || rdr != rnr)) \
 	{ \
@@ -574,7 +576,7 @@ static void exec_##opname##_##oparg####rotname(cpu_t *cpu) \
 			rn -= offset; \
 		cpu_set_reg(cpu, rnr, rn); \
 	} \
-	if (rdr != 15) \
+	if (rdr != CPU_REG_PC) \
 	{ \
 		cpu_inc_pc(cpu, 4); \
 		cpu->instr_delay = 3; \
@@ -593,7 +595,7 @@ static void print_##opname##_##oparg####rotname(cpu_t *cpu, char *data, size_t s
 		uint8_t shift = (cpu->instr_opcode >> 7) & 0x1F; \
 		uint8_t rm = cpu->instr_opcode & 0xF; \
 		if (post_pre) \
-			snprintf(data, size, #opname " r%d, [r%d, r%d," #rotname " #0x%x]!", rd, rn, rm, shift); \
+			snprintf(data, size, #opname " r%d, [r%d, r%d," #rotname " #0x%x]%s", rd, rn, rm, shift, writeback_mm ? "!" : ""); \
 		else \
 			snprintf(data, size, #opname " r%d, [r%d], r%d, " #rotname " #0x%x", rd, rn, rm, shift); \
 	} \
@@ -601,7 +603,7 @@ static void print_##opname##_##oparg####rotname(cpu_t *cpu, char *data, size_t s
 	{ \
 		uint32_t offset = cpu->instr_opcode & 0xFFF; \
 		if (post_pre) \
-			snprintf(data, size, #opname " r%d, [r%d, #0x%x]!", rd, rn, offset); \
+			snprintf(data, size, #opname " r%d, [r%d, #0x%x]%s", rd, rn, offset, writeback_mm ? "!" : ""); \
 		else \
 			snprintf(data, size, #opname " r%d, [r%d], #0x%x", rd, rn, offset); \
 	} \
@@ -618,7 +620,7 @@ static void exec_##opname##_##oparg(cpu_t *cpu) \
 { \
 	uint32_t rnr = (cpu->instr_opcode >> 16) & 0xF; \
 	uint32_t rn = cpu_get_reg(cpu, rnr); \
-	rn += (rnr == 15) ? 8 : 0; \
+	rn += (rnr == CPU_REG_PC) ? 8 : 0; \
 	uint32_t rdr = (cpu->instr_opcode >> 12) & 0xF; \
 	uint32_t offset; \
 	int post_update = 1; \
@@ -648,7 +650,7 @@ static void exec_##opname##_##oparg(cpu_t *cpu) \
 	else \
 	{ \
 		uint32_t rd = cpu_get_reg(cpu, rdr); \
-		rd += (rdr == 15) ? 12 : 0; \
+		rd += (rdr == CPU_REG_PC) ? 12 : 0; \
 		if (op == 1) \
 		{ \
 			mem_set16(cpu->mem, rn + 2 * offset, rd); \
@@ -664,7 +666,7 @@ static void exec_##opname##_##oparg(cpu_t *cpu) \
 		{ \
 			uint32_t rdr2 = (rdr + 1) & 0xF; \
 			uint32_t rd2 = cpu_get_reg(cpu, rdr2); \
-			rd2 += (rdr2 == 15) ? 12 : 0; \
+			rd2 += (rdr2 == CPU_REG_PC) ? 12 : 0; \
 			mem_set32(cpu->mem, rn + 2 * offset + 0, rd); \
 			mem_set32(cpu->mem, rn + 2 * offset + 4, rd2); \
 		} \
@@ -677,7 +679,7 @@ static void exec_##opname##_##oparg(cpu_t *cpu) \
 			rn -= offset; \
 		cpu_set_reg(cpu, rnr, rn); \
 	} \
-	if (rdr != 15) \
+	if (rdr != CPU_REG_PC) \
 	{ \
 		cpu_inc_pc(cpu, 4); \
 		cpu->instr_delay = 3; \
@@ -823,44 +825,107 @@ STLD_I(ofip, 1, 0);
 STLD_I(prim, 0, 1);
 STLD_I(prip, 1, 1);
 
-#define STLD_MI(id, ab) \
-static const cpu_instr_t arm_stm##id##ab = \
+#define STLDM(opname, oparg, post_pre, down_up, usermode, writeback, st_ld) \
+static void exec_##opname####oparg(cpu_t *cpu) \
 { \
-	.name = "stm" #id #ab, \
-}; \
-static const cpu_instr_t arm_ldm##id##ab = \
+	uint32_t rnr = (cpu->instr_opcode >> 16) & 0xF; \
+	uint32_t rl = (cpu->instr_opcode >>  0) & 0xFFFF; \
+	uint32_t rn = cpu_get_reg(cpu, rnr) & ~3; \
+	if (!down_up) \
+	{ \
+		uint32_t nregs = 0; \
+		for (int i = 0; i < 16; ++i) \
+		{ \
+			if (rl & (1 << i)) \
+				nregs++; \
+		} \
+		rn -= 4 * nregs; \
+		if (writeback) \
+			cpu_set_reg(cpu, rnr, rn); \
+	} \
+	for (int i = 0; i < 16; ++i) \
+	{ \
+		if (!(rl & (1 << i))) \
+			continue; \
+		if (post_pre == down_up) \
+			rn += 4; \
+		if (st_ld) \
+			cpu_set_reg(cpu, i, mem_get32(cpu->mem, rn)); \
+		else \
+			mem_set32(cpu->mem, rn, cpu_get_reg(cpu, i)); \
+		if (post_pre != down_up) \
+			rn += 4; \
+		cpu->instr_delay++; \
+	} \
+	if (writeback && down_up) \
+		cpu_set_reg(cpu, rnr, rn); \
+	cpu_inc_pc(cpu, 4); \
+	cpu->instr_delay++; \
+} \
+static void print_##opname####oparg(cpu_t *cpu, char *data, size_t size) \
 { \
-	.name = "ldm" #id #ab, \
-}; \
-static const cpu_instr_t arm_stm##id##ab##_w = \
+	uint32_t rn = (cpu->instr_opcode >> 16) & 0xF; \
+	uint32_t rl = (cpu->instr_opcode >>  0) & 0xFFFF; \
+	int res; \
+	char *tmpd = data; \
+	size_t tmps = size; \
+	res = snprintf(data, size, #opname " r%d%s, {", rn, writeback ? "!" : ""); \
+	tmpd += res; \
+	tmps -= res; \
+	if (rl) \
+	{ \
+		for (int i = 0; i < 16; ++i) \
+		{ \
+			if (!(rl & (1 << i))) \
+				continue; \
+			snprintf(tmpd, tmps, "r%d,", i); \
+			tmpd += i > 9 ? 4 : 3; \
+			tmps -= i > 9 ? 4 : 3; \
+		} \
+		tmpd--; \
+		tmps++; \
+	} \
+	snprintf(tmpd, tmps, "}%s", usermode ? "^" : ""); \
+} \
+static const cpu_instr_t arm_##opname####oparg = \
 { \
-	.name = "stm" #id #ab "_w", \
-}; \
-static const cpu_instr_t arm_ldm##id##ab##_w = \
-{ \
-	.name = "ldm" #id #ab "_w", \
-}; \
-static const cpu_instr_t arm_stm##id##ab##_u = \
-{ \
-	.name = "stm" #id #ab "_u", \
-}; \
-static const cpu_instr_t arm_ldm##id##ab##_u = \
-{ \
-	.name = "ldm" #id #ab "_u", \
-}; \
-static const cpu_instr_t arm_stm##id##ab##_uw = \
-{ \
-	.name = "stm" #id #ab "_uw", \
-}; \
-static const cpu_instr_t arm_ldm##id##ab##_uw = \
-{ \
-	.name = "ldm" #id #ab "_uw", \
-};
+	.name = #opname #oparg, \
+	.exec = exec_##opname####oparg, \
+	.print = print_##opname####oparg, \
+}
 
-STLD_MI(d, a);
-STLD_MI(i, a);
-STLD_MI(d, b);
-STLD_MI(i, b);
+STLDM(stmda,    , 0, 0, 0, 0, 0);
+STLDM(stmdb,    , 1, 0, 0, 0, 0);
+STLDM(stmia,    , 0, 1, 0, 0, 0);
+STLDM(stmib,    , 1, 1, 0, 0, 0);
+STLDM(stmda, _u , 0, 0, 1, 0, 0);
+STLDM(stmdb, _u , 1, 0, 1, 0, 0);
+STLDM(stmia, _u , 0, 1, 1, 0, 0);
+STLDM(stmib, _u , 1, 1, 1, 0, 0);
+STLDM(stmda, _w , 0, 0, 0, 1, 0);
+STLDM(stmdb, _w , 1, 0, 0, 1, 0);
+STLDM(stmia, _w , 0, 1, 0, 1, 0);
+STLDM(stmib, _w , 1, 1, 0, 1, 0);
+STLDM(stmda, _uw, 0, 0, 1, 1, 0);
+STLDM(stmdb, _uw, 1, 0, 1, 1, 0);
+STLDM(stmia, _uw, 0, 1, 1, 1, 0);
+STLDM(stmib, _uw, 1, 1, 1, 1, 0);
+STLDM(ldmda,    , 0, 0, 0, 0, 1);
+STLDM(ldmdb,    , 1, 0, 0, 0, 1);
+STLDM(ldmia,    , 0, 1, 0, 0, 1);
+STLDM(ldmib,    , 1, 1, 0, 0, 1);
+STLDM(ldmda, _u , 0, 0, 1, 0, 1);
+STLDM(ldmdb, _u , 1, 0, 1, 0, 1);
+STLDM(ldmia, _u , 0, 1, 1, 0, 1);
+STLDM(ldmib, _u , 1, 1, 1, 0, 1);
+STLDM(ldmda, _w , 0, 0, 0, 1, 1);
+STLDM(ldmdb, _w , 1, 0, 0, 1, 1);
+STLDM(ldmia, _w , 0, 1, 0, 1, 1);
+STLDM(ldmib, _w , 1, 1, 0, 1, 1);
+STLDM(ldmda, _uw, 0, 0, 1, 1, 1);
+STLDM(ldmdb, _uw, 1, 0, 1, 1, 1);
+STLDM(ldmia, _uw, 0, 1, 1, 1, 1);
+STLDM(ldmib, _uw, 1, 1, 1, 1, 1);
 
 #define STLDC(v) \
 static const cpu_instr_t arm_stc_##v = \
@@ -1003,7 +1068,7 @@ static void exec_b(cpu_t *cpu)
 {
 	int32_t v = cpu->instr_opcode & 0x7FFFFF;
 	if (cpu->instr_opcode & 0x800000)
-		v = -(~v & 0x7FFFFF);
+		v = -(~v & 0x7FFFFF) - 1;
 	cpu_inc_pc(cpu, 8 + 4 * v);
 	cpu->instr_delay = 3;
 }
@@ -1012,7 +1077,7 @@ static void print_b(cpu_t *cpu, char *data, size_t size)
 {
 	int32_t v = cpu->instr_opcode & 0x7FFFFF;
 	if (cpu->instr_opcode & 0x800000)
-		v = -(~v & 0x7FFFFF);
+		v = -(~v & 0x7FFFFF) - 1;
 	snprintf(data, size, "b %c0x%x", v < 0 ? '-' : '+', v < 0 ? -v : v);
 }
 
@@ -1027,7 +1092,7 @@ static void exec_bl(cpu_t *cpu)
 {
 	int32_t v = cpu->instr_opcode & 0x7FFFFF;
 	if (cpu->instr_opcode & 0x800000)
-		v = -(~v & 0x7FFFFF);
+		v = -(~v & 0x7FFFFF) - 1;
 	cpu_set_reg(cpu, 14, cpu_get_reg(cpu, 15) + 4);
 	cpu_inc_pc(cpu, 8 + 4 * v);
 	cpu->instr_delay = 3;
@@ -1037,7 +1102,7 @@ static void print_bl(cpu_t *cpu, char *data, size_t size)
 {
 	int32_t v = cpu->instr_opcode & 0x7FFFFF;
 	if (cpu->instr_opcode & 0x800000)
-		v = -(~v & 0x7FFFFF);
+		v = -(~v & 0x7FFFFF) - 1;
 	snprintf(data, size, "bl %c0x%x", v < 0 ? '-' : '+', v < 0 ? -v : v);
 }
 
@@ -1050,16 +1115,24 @@ static const cpu_instr_t arm_bl =
 
 static void exec_bx(cpu_t *cpu)
 {
-	uint8_t rn = cpu->instr_opcode & 0xF;
-	cpu_set_reg(cpu, rn, cpu_get_reg(cpu, rn) | 1);
+	uint8_t rnr = cpu->instr_opcode & 0xF;
+	uint32_t rn = cpu_get_reg(cpu, rnr);
+	cpu_set_reg(cpu, rnr, rn | 1);
+	cpu_set_reg(cpu, CPU_REG_PC, rn & ~1);
 	CPU_SET_FLAG_T(cpu, 1);
-	cpu_inc_pc(cpu, 4);
+}
+
+static void print_bx(cpu_t *cpu, char *data, size_t size)
+{
+	uint8_t rn = cpu->instr_opcode & 0xF;
+	snprintf(data, size, "bx r%d", rn);
 }
 
 static const cpu_instr_t arm_bx =
 {
 	.name = "bx",
 	.exec = exec_bx,
+	.print = print_bx,
 };
 
 static const cpu_instr_t arm_blx_reg =

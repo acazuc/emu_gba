@@ -79,7 +79,7 @@ void *mem_ptr(mem_t *mem, uint32_t addr)
 		case 0xF:
 			return mbc_ptr(mem->mbc, addr);
 	}
-	//fprintf(stderr, "unknown addr: %08x\n", addr);
+	fprintf(stderr, "unknown addr: %08x\n", addr);
 	return NULL;
 }
 

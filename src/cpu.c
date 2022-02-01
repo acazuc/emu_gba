@@ -97,7 +97,7 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 
 	printf("[%-4s] [%08x] %-30s (%08x) %s\n\n",
 	        msg,
-	        cpu_get_reg(cpu, 15),
+	        cpu_get_reg(cpu, CPU_REG_PC),
 	        tmp,
 	        cpu->instr_opcode,
 	        regs);
@@ -107,12 +107,12 @@ static bool next_instruction(cpu_t *cpu)
 {
 	if (CPU_GET_FLAG_T(cpu))
 	{
-		cpu->instr_opcode = mem_get16(cpu->mem, cpu_get_reg(cpu, 15));
+		cpu->instr_opcode = mem_get16(cpu->mem, cpu_get_reg(cpu, CPU_REG_PC));
 		cpu->instr = cpu_instr_thumb[cpu->instr_opcode >> 6];
 	}
 	else
 	{
-		cpu->instr_opcode = mem_get32(cpu->mem, cpu_get_reg(cpu, 15));
+		cpu->instr_opcode = mem_get32(cpu->mem, cpu_get_reg(cpu, CPU_REG_PC));
 		if (!check_arm_cond(cpu, cpu->instr_opcode >> 28))
 		{
 			print_instr(cpu, "SKIP", cpu_instr_arm[((cpu->instr_opcode >> 16) & 0xFF0) | ((cpu->instr_opcode >> 4) & 0xF)]);
@@ -130,8 +130,10 @@ void cpu_cycle(cpu_t *cpu)
 {
 	switch (cpu->instr_delay)
 	{
-		case 0:
 		case 1:
+			cpu->instr_delay--;
+			break;
+		case 0:
 			break;
 		default:
 			cpu->instr_delay--;

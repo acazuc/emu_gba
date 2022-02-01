@@ -53,6 +53,10 @@ do \
 #define CPU_MODE_UND 0xB
 #define CPU_MODE_SYS 0xF
 
+#define CPU_REG_SP 0xD
+#define CPU_REG_LR 0xE
+#define CPU_REG_PC 0xF
+
 typedef struct cpu_regs_s
 {
 	uint32_t r[16];
