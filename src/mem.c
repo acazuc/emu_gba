@@ -46,13 +46,15 @@ void *mem_ptr(mem_t *mem, uint32_t addr)
 		case 0x1: //empty
 			break;
 		case 0x2: //board wram
-			if (addr < 0x2040000)
-				return &mem->board_wram[addr - 0x2000000];
-			break;
+		{
+			uint32_t a = addr & 0x3FFFF;
+			return &mem->board_wram[a];
+		}
 		case 0x3: //chip wram
-			if (addr < 0x3008000)
-				return &mem->board_wram[addr - 0x3000000];
-			break;
+		{
+			uint32_t a = addr & 0x7FFF;
+			return &mem->chip_wram[a];
+		}
 		case 0x4: //registers
 			if (addr < 0x40003FF)
 				return &mem->io_regs[addr - 0x4000000];
@@ -79,7 +81,7 @@ void *mem_ptr(mem_t *mem, uint32_t addr)
 		case 0xF:
 			return mbc_ptr(mem->mbc, addr);
 	}
-	fprintf(stderr, "unknown addr: %08x\n", addr);
+	printf("unknown addr: %08x\n", addr);
 	return NULL;
 }
 

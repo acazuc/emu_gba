@@ -51,7 +51,7 @@ void gba_del(gba_t *gba)
 
 void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joypad)
 {
-	for (size_t i = 0; i < 1/*280896*/; ++i)
+	for (size_t i = 0; i < 280896; ++i)
 		cpu_cycle(gba->cpu);
 	memset(video_buf, 0, 240 * 160 * 4);
 	memset(audio_buf, 0, 804 * 2);

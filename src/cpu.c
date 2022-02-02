@@ -6,6 +6,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#define CPU_DEBUG_BASE    (1 << 0) /* print instr name */
+#define CPU_DEBUG_INSTR   (1 << 1) /* print disassembled instruction */
+#define CPU_DEBUG_REGS    (1 << 2) /* print registers */
+#define CPU_DEBUG_REGS_ML (1 << 3) /* multiline registers dump */
+#define CPU_DEBUG_ALL     (CPU_DEBUG_BASE | CPU_DEBUG_INSTR | CPU_DEBUG_REGS)
+
 cpu_t *cpu_new(mem_t *mem)
 {
 	cpu_t *cpu = calloc(sizeof(*cpu), 1);
@@ -71,36 +77,31 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 	char regs[1024];
 	char *rtmp;
 
-	if (instr->print)
+	if ((cpu->debug & CPU_DEBUG_INSTR) && instr->print)
 		instr->print(cpu, tmp, sizeof(tmp));
 	else
 		snprintf(tmp, sizeof(tmp), "%s", instr->name);
 
-	rtmp = regs;
-	for (unsigned i = 0; i < 16; ++i)
+	printf("[%-4s] [%08x] %s%s",
+	        msg,
+	        cpu->instr_opcode,
+	        tmp,
+	        "\n");
+
+	if (cpu->debug & CPU_DEBUG_REGS)
 	{
-		snprintf(rtmp, 13, "r%02u=%08x", i, cpu_get_reg(cpu, i));
-		rtmp += 12;
-		if (i == 15)
-			break;
-		if (i % 4 == 3)
+		rtmp = regs;
+		for (unsigned i = 0; i < 16; ++i)
 		{
-			snprintf(rtmp, 62, "\n%60s", "");
-			rtmp += 61;
-		}
-		else
-		{
-			snprintf(rtmp, 2, " ");
+			printf("r%02u=%08x", i, cpu_get_reg(cpu, i));
+			rtmp += 12;
+			if (i == 15)
+				break;
+			printf("%c", ((cpu->debug & CPU_DEBUG_REGS_ML) && i % 4 == 3) ? '\n' : ' ');
 			rtmp++;
 		}
+		printf("\n\n");
 	}
-
-	printf("[%-4s] [%08x] %-30s (%08x) %s\n\n",
-	        msg,
-	        cpu_get_reg(cpu, CPU_REG_PC),
-	        tmp,
-	        cpu->instr_opcode,
-	        regs);
 }
 
 static bool next_instruction(cpu_t *cpu)
@@ -115,7 +116,8 @@ static bool next_instruction(cpu_t *cpu)
 		cpu->instr_opcode = mem_get32(cpu->mem, cpu_get_reg(cpu, CPU_REG_PC));
 		if (!check_arm_cond(cpu, cpu->instr_opcode >> 28))
 		{
-			print_instr(cpu, "SKIP", cpu_instr_arm[((cpu->instr_opcode >> 16) & 0xFF0) | ((cpu->instr_opcode >> 4) & 0xF)]);
+			if (cpu->debug)
+				print_instr(cpu, "SKIP", cpu_instr_arm[((cpu->instr_opcode >> 16) & 0xFF0) | ((cpu->instr_opcode >> 4) & 0xF)]);
 			cpu_inc_pc(cpu, 4);
 			cpu->instr = NULL;
 			return false;
@@ -128,6 +130,8 @@ static bool next_instruction(cpu_t *cpu)
 
 void cpu_cycle(cpu_t *cpu)
 {
+	cpu->debug = CPU_DEBUG_INSTR | CPU_DEBUG_REGS;
+
 	switch (cpu->instr_delay)
 	{
 		case 1:
@@ -148,12 +152,14 @@ void cpu_cycle(cpu_t *cpu)
 
 	if (cpu->instr->exec)
 	{
-		print_instr(cpu, "EXEC", cpu->instr);
+		if (cpu->debug)
+			print_instr(cpu, "EXEC", cpu->instr);
 		cpu->instr->exec(cpu);
 	}
 	else
 	{
-		print_instr(cpu, "UNIM", cpu->instr);
+		if (cpu->debug)
+			print_instr(cpu, "UNIM", cpu->instr);
 		cpu->regs.r[15] += CPU_GET_FLAG_T(cpu) ? 2 : 4;
 	}
 

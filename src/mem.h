@@ -10,7 +10,7 @@ typedef struct mem_s
 	mbc_t *mbc;
 	uint8_t bios[0x4000];
 	uint8_t board_wram[0x40000];
-	uint8_t chip_wram[0x800];
+	uint8_t chip_wram[0x8000];
 	uint8_t io_regs[0x3FF];
 	uint8_t palette[0x400];
 	uint8_t vram[0x1800];

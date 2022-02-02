@@ -471,7 +471,8 @@ static void exec_ldrpc_r##r(cpu_t *cpu) \
 { \
 	uint32_t rd = (cpu->instr_opcode >> 8) & 0x7; \
 	uint32_t nn = cpu->instr_opcode & 0xFF; \
-	cpu_set_reg(cpu, rd, ((cpu_get_reg(cpu, 15) + 4) & ~2) + nn * 4); \
+	uint32_t v = mem_get32(cpu->mem, ((cpu_get_reg(cpu, 15) + 4) & ~2) + nn * 4); \
+	cpu_set_reg(cpu, rd, v); \
 	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay = 3; \
 } \
@@ -691,9 +692,9 @@ static void exec_addsp_imm(cpu_t *cpu)
 	uint32_t add_sub = (cpu->instr_opcode >> 7) & 0x1;
 	uint32_t nn = (cpu->instr_opcode >> 0) & 0x7F;
 	if (add_sub)
-		cpu_set_reg(cpu, CPU_REG_SP, cpu_get_reg(cpu, CPU_REG_SP) - nn);
+		cpu_set_reg(cpu, CPU_REG_SP, cpu_get_reg(cpu, CPU_REG_SP) - nn * 4);
 	else
-		cpu_set_reg(cpu, CPU_REG_SP, cpu_get_reg(cpu, CPU_REG_SP) + nn);
+		cpu_set_reg(cpu, CPU_REG_SP, cpu_get_reg(cpu, CPU_REG_SP) + nn * 4);
 	cpu_inc_pc(cpu, 2);
 	cpu->instr_delay = 1;
 }
@@ -894,9 +895,30 @@ static const cpu_instr_t thumb_b =
 	.print = print_b,
 };
 
+static void exec_blx_off(cpu_t *cpu)
+{
+	uint32_t nn = cpu->instr_opcode & 0x7FF;
+	uint32_t pc = cpu_get_reg(cpu, CPU_REG_PC);
+	uint32_t lr = (pc + 2) | 1;
+	int32_t dst = (cpu_get_reg(cpu, CPU_REG_LR) & ~1) + (nn << 1);
+	dst &= 0x7FFFFF;
+	cpu_set_reg(cpu, CPU_REG_PC, dst);
+	cpu_set_reg(cpu, CPU_REG_LR, lr);
+	CPU_SET_FLAG_T(cpu, 0);
+	cpu->instr_delay = 3;
+}
+
+static void print_blx_off(cpu_t *cpu, char *data, size_t size)
+{
+	uint32_t nn = cpu->instr_opcode & 0x7FF;
+	snprintf(data, size, "blx #0x%x", nn);
+}
+
 static const cpu_instr_t thumb_blx_off =
 {
 	.name = "blx off",
+	.exec = exec_blx_off,
+	.print = print_blx_off
 };
 
 static void exec_bl_setup(cpu_t *cpu)
@@ -910,7 +932,7 @@ static void exec_bl_setup(cpu_t *cpu)
 static void print_bl_setup(cpu_t *cpu, char *data, size_t size)
 {
 	uint32_t nn = cpu->instr_opcode & 0x7FF;
-	snprintf(data, size, "bl1 #0x%x", nn);
+	snprintf(data, size, "bl #0x%x", nn);
 }
 
 static const cpu_instr_t thumb_bl_setup =
@@ -935,7 +957,7 @@ static void exec_bl_off(cpu_t *cpu)
 static void print_bl_off(cpu_t *cpu, char *data, size_t size)
 {
 	uint32_t nn = cpu->instr_opcode & 0x7FF;
-	snprintf(data, size, "bl2 #0x%x", nn);
+	snprintf(data, size, "bl #0x%x", nn);
 }
 
 static const cpu_instr_t thumb_bl_off =

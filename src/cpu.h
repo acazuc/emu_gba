@@ -78,6 +78,7 @@ typedef struct cpu_s
 	const cpu_instr_t *instr;
 	uint32_t instr_opcode;
 	uint32_t instr_delay;
+	uint8_t debug;
 } cpu_t;
 
 cpu_t *cpu_new(mem_t *mem);
