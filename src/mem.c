@@ -36,7 +36,7 @@ void mem_del(mem_t *mem)
 void *mem_ptr(mem_t *mem, uint32_t addr)
 {
 	if (addr >= 0x10000000)
-		return NULL;
+		goto end;
 	switch ((addr >> 24) & 0xF)
 	{
 		case 0x0: //bios
@@ -81,6 +81,7 @@ void *mem_ptr(mem_t *mem, uint32_t addr)
 		case 0xF:
 			return mbc_ptr(mem->mbc, addr);
 	}
+end:
 	printf("unknown addr: %08x\n", addr);
 	return NULL;
 }

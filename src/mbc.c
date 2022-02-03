@@ -29,24 +29,27 @@ void mbc_del(mbc_t *mbc)
 
 void *mbc_ptr(mbc_t *mbc, uint32_t addr)
 {
-	switch ((addr >> 28) & 0xF)
+	switch ((addr >> 24) & 0xF)
 	{
 		case 0x8:
 		case 0x9: //rom0
-			break;
 		case 0xA:
 		case 0xB: //rom1
-			break;
 		case 0xC:
 		case 0xD: //rom2
+		{
+			uint32_t a = addr  - 0x8000000;
+			if (a < mbc->size)
+				return &mbc->data[a];
 			break;
+		}
 		case 0xE:
-			if (addr < 0xE0010000)
+			if (addr < 0xE010000)
 				return NULL; //XXX: SRAM
 			break;
 		case 0xF: //unused
 			break;
 	}
-	fprintf(stderr, "unknown addr: %08x\n", addr);
+	printf("unknown mbc addr: %08x\n", addr);
 	return NULL;
 }

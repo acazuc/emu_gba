@@ -6,7 +6,7 @@
 
 typedef struct mbc_s
 {
-	void *data;
+	uint8_t *data;
 	size_t size;
 } mbc_t;
 

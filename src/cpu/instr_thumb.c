@@ -649,11 +649,11 @@ THUMB_STLDSP_R(ldr, 7, 1);
 static void exec_add##rr##_r##r(cpu_t *cpu) \
 { \
 	uint32_t rd = (cpu->instr_opcode >> 8) & 0x7; \
-	uint32_t nn = (cpu->instr_opcode >> 0) & 0xFF; \
+	uint32_t nn = ((cpu->instr_opcode >> 0) & 0xFF) * 4; \
 	if (pc_sp) \
 		cpu_set_reg(cpu, rd, cpu_get_reg(cpu, CPU_REG_SP) + nn); \
 	else \
-		cpu_set_reg(cpu, rd, ((cpu_get_reg(cpu, CPU_REG_PC) +4) & ~2) + nn); \
+		cpu_set_reg(cpu, rd, ((cpu_get_reg(cpu, CPU_REG_PC) + 4) & ~2) + nn); \
 	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay = 1; \
 } \
@@ -661,7 +661,7 @@ static void print_add##rr##_r##r(cpu_t *cpu, char *data, size_t size) \
 { \
 	uint32_t rd = (cpu->instr_opcode >> 8) & 0x7; \
 	uint32_t nn = (cpu->instr_opcode >> 0) & 0xFF; \
-	snprintf(data, size, "add r%d, " #rr ", #0x%x", rd, nn); \
+	snprintf(data, size, "add r%d, " #rr ", #0x%x", rd, nn * 4); \
 } \
 static const cpu_instr_t thumb_add##rr##_r##r = \
 { \
@@ -713,47 +713,52 @@ static const cpu_instr_t thumb_addsp_imm =
 	.print = print_addsp_imm,
 };
 
-#define THUMB_PUSHPOP(n, next, push_pop, ext_reg, base_reg) \
+#define THUMB_PUSHPOP(n, next, post_pre, down_up, st_ld, ext_reg, base_reg) \
 static void exec_##n####next(cpu_t *cpu) \
 { \
-	uint32_t regs = cpu->instr_opcode & 0xFF; \
+	uint32_t rl = cpu->instr_opcode & 0xFF; \
 	uint32_t sp = cpu_get_reg(cpu, base_reg); \
-	if (push_pop) \
+	if (!down_up) \
 	{ \
-		for (int i = 0; i < 8; i++) \
+		uint32_t nregs = 0; \
+		for (int i = 0; i < 8; ++i) \
 		{ \
-			if (!(regs & (1 << i))) \
-				continue; \
-			cpu_set_reg(cpu, i, mem_get32(cpu->mem, sp)); \
-			sp += 4; \
-			cpu->instr_delay++; \
+			if (rl & (1 << i)) \
+				nregs++; \
 		} \
+		if (ext_reg) \
+			nregs++; \
+		sp -= 4 * nregs; \
+		cpu_set_reg(cpu, base_reg, sp); \
 	} \
-	else \
+	for (int i = 0; i < 8; ++i) \
 	{ \
-		for (int i = 7; i >= 0; i--) \
-		{ \
-			if (!(regs & (1 << i))) \
-				continue; \
-			sp -= 4; \
+		if (!(rl & (1 << i))) \
+			continue; \
+		if (post_pre == down_up) \
+			sp += 4; \
+		if (st_ld) \
+			cpu_set_reg(cpu, i, mem_get32(cpu->mem, sp)); \
+		else \
 			mem_set32(cpu->mem, sp, cpu_get_reg(cpu, i)); \
-			cpu->instr_delay++; \
-		} \
+		if (post_pre != down_up) \
+			sp += 4; \
+		cpu->instr_delay++; \
 	} \
 	if (ext_reg) \
 	{ \
-		if (push_pop) \
-		{ \
-			cpu_set_reg(cpu, CPU_REG_PC, mem_get32(cpu->mem, sp)); \
+		if (post_pre == down_up) \
 			sp += 4; \
-		} \
+		if (st_ld) \
+			cpu_set_reg(cpu, CPU_REG_PC, mem_get32(cpu->mem, sp)); \
 		else \
-		{ \
-			sp -= 4; \
 			mem_set32(cpu->mem, sp, cpu_get_reg(cpu, CPU_REG_LR)); \
-		} \
+		if (post_pre != down_up) \
+			sp += 4; \
+		cpu->instr_delay++; \
 	} \
-	cpu_set_reg(cpu, base_reg, sp); \
+	if (down_up) \
+		cpu_set_reg(cpu, base_reg, sp); \
 	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay++; \
 } \
@@ -767,9 +772,9 @@ static void print_##n####next(cpu_t *cpu, char *data, size_t size) \
 	tmps -= (1 + strlen(#n)); \
 	if (base_reg != CPU_REG_SP) \
 	{ \
-		snprintf(tmpd, tmps, "r%d, ", base_reg); \
-		tmpd += 4; \
-		tmps -= 4; \
+		snprintf(tmpd, tmps, "r%d!, ", base_reg); \
+		tmpd += 5; \
+		tmps -= 5; \
 	} \
 	snprintf(tmpd, tmps, "{"); \
 	tmpd++; \
@@ -787,6 +792,26 @@ static void print_##n####next(cpu_t *cpu, char *data, size_t size) \
 		tmps++; \
 		tmpd--; \
 	} \
+	if (ext_reg) \
+	{ \
+		if (regs) \
+		{ \
+			tmps--; \
+			tmpd++; \
+		} \
+		if (st_ld) \
+		{ \
+			snprintf(tmpd, tmps, "r%d", CPU_REG_PC); \
+			tmpd += 3; \
+			tmps -= 3; \
+		} \
+		else \
+		{ \
+			snprintf(tmpd, tmps, "r%d", CPU_REG_LR); \
+			tmpd += 3; \
+			tmps -= 3; \
+		} \
+	} \
 	snprintf(tmpd, tmps, "}"); \
 } \
 static const cpu_instr_t thumb_##n####next = \
@@ -796,26 +821,26 @@ static const cpu_instr_t thumb_##n####next = \
 	.print = print_##n####next, \
 }
 
-THUMB_PUSHPOP(push ,    , 0, 0, CPU_REG_SP);
-THUMB_PUSHPOP(pop  ,    , 1, 0, CPU_REG_SP);
-THUMB_PUSHPOP(push , _lr, 0, 1, CPU_REG_SP);
-THUMB_PUSHPOP(pop  , _pc, 1, 1, CPU_REG_SP);
-THUMB_PUSHPOP(stmia, _r0, 0, 0, 0);
-THUMB_PUSHPOP(stmia, _r1, 0, 0, 1);
-THUMB_PUSHPOP(stmia, _r2, 0, 0, 2);
-THUMB_PUSHPOP(stmia, _r3, 0, 0, 3);
-THUMB_PUSHPOP(stmia, _r4, 0, 0, 4);
-THUMB_PUSHPOP(stmia, _r5, 0, 0, 5);
-THUMB_PUSHPOP(stmia, _r6, 0, 0, 6);
-THUMB_PUSHPOP(stmia, _r7, 0, 0, 7);
-THUMB_PUSHPOP(ldmia, _r0, 1, 0, 0);
-THUMB_PUSHPOP(ldmia, _r1, 1, 0, 1);
-THUMB_PUSHPOP(ldmia, _r2, 1, 0, 2);
-THUMB_PUSHPOP(ldmia, _r3, 1, 0, 3);
-THUMB_PUSHPOP(ldmia, _r4, 1, 0, 4);
-THUMB_PUSHPOP(ldmia, _r5, 1, 0, 5);
-THUMB_PUSHPOP(ldmia, _r6, 1, 0, 6);
-THUMB_PUSHPOP(ldmia, _r7, 1, 0, 7);
+THUMB_PUSHPOP(push ,    , 1, 0, 0, 0, CPU_REG_SP);
+THUMB_PUSHPOP(pop  ,    , 0, 1, 1, 0, CPU_REG_SP);
+THUMB_PUSHPOP(push , _lr, 1, 0, 0, 1, CPU_REG_SP);
+THUMB_PUSHPOP(pop  , _pc, 0, 1, 1, 1, CPU_REG_SP);
+THUMB_PUSHPOP(stmia, _r0, 0, 1, 0, 0, 0);
+THUMB_PUSHPOP(stmia, _r1, 0, 1, 0, 0, 1);
+THUMB_PUSHPOP(stmia, _r2, 0, 1, 0, 0, 2);
+THUMB_PUSHPOP(stmia, _r3, 0, 1, 0, 0, 3);
+THUMB_PUSHPOP(stmia, _r4, 0, 1, 0, 0, 4);
+THUMB_PUSHPOP(stmia, _r5, 0, 1, 0, 0, 5);
+THUMB_PUSHPOP(stmia, _r6, 0, 1, 0, 0, 6);
+THUMB_PUSHPOP(stmia, _r7, 0, 1, 0, 0, 7);
+THUMB_PUSHPOP(ldmia, _r0, 0, 1, 1, 0, 0);
+THUMB_PUSHPOP(ldmia, _r1, 0, 1, 1, 0, 1);
+THUMB_PUSHPOP(ldmia, _r2, 0, 1, 1, 0, 2);
+THUMB_PUSHPOP(ldmia, _r3, 0, 1, 1, 0, 3);
+THUMB_PUSHPOP(ldmia, _r4, 0, 1, 1, 0, 4);
+THUMB_PUSHPOP(ldmia, _r5, 0, 1, 1, 0, 5);
+THUMB_PUSHPOP(ldmia, _r6, 0, 1, 1, 0, 6);
+THUMB_PUSHPOP(ldmia, _r7, 0, 1, 1, 0, 7);
 
 static const cpu_instr_t thumb_bkpt =
 {
