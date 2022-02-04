@@ -19,6 +19,7 @@ cpu_t *cpu_new(mem_t *mem)
 		return NULL;
 
 	cpu->mem = mem;
+	cpu->regs.cpsr = CPU_MODE_SYS;
 	cpu_update_mode(cpu);
 	return cpu;
 }
@@ -61,7 +62,7 @@ static bool check_arm_cond(cpu_t *cpu, uint32_t cond)
 		case 0xC:
 			return !CPU_GET_FLAG_Z(cpu) && CPU_GET_FLAG_N(cpu) == CPU_GET_FLAG_V(cpu);
 		case 0xD:
-			return CPU_GET_FLAG_Z(cpu) && CPU_GET_FLAG_N(cpu) != CPU_GET_FLAG_V(cpu);
+			return CPU_GET_FLAG_Z(cpu) || CPU_GET_FLAG_N(cpu) != CPU_GET_FLAG_V(cpu);
 		case 0xE:
 			return true;
 		case 0xF:
@@ -82,8 +83,10 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 	else
 		snprintf(tmp, sizeof(tmp), "%s", instr->name);
 
-	printf("[%-4s] [%08x] %s%s",
+	printf("[%-4s] [%08x] [%08x] [%08x] %s%s",
 	        msg,
+	        cpu->regs.cpsr,
+	        *cpu->regs.spsr,
 	        cpu->instr_opcode,
 	        tmp,
 	        "\n");

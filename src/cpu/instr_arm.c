@@ -5,9 +5,9 @@
 #include <string.h>
 #include <stdio.h>
 
-#define ARM_LSL(v, s) ((v) << (s))
-#define ARM_LSR(v, s) ((v) >> (s))
-#define ARM_ASR(v, s) ((int32_t)(v) >> (s))
+#define ARM_LSL(v, s) (((s) >= 32) ? 0 : ((v) << (s)))
+#define ARM_LSR(v, s) (((s) >= 32) ? 0 : ((v) >> (s)))
+#define ARM_ASR(v, s) (((s) >= 32) ? (v & 0x80000000) : (uint32_t)((int32_t)(v) >> (s)))
 #define ARM_ROR(v, s) (((v) >> (s)) | ((v) << (32 - (s))))
 
 static void exec_alu_flags_logical(cpu_t *cpu, uint32_t v)
@@ -18,7 +18,7 @@ static void exec_alu_flags_logical(cpu_t *cpu, uint32_t v)
 
 static void exec_alu_flags_arithmetical(cpu_t *cpu, uint32_t v, uint32_t op1, uint32_t op2)
 {
-	CPU_SET_FLAG_V(cpu, ((op1 ^ op2) & 0x80000000) && ((op1 ^ v) & 0x80000000));
+	CPU_SET_FLAG_V(cpu, (v ^ op1) & 0x80000000);
 	CPU_SET_FLAG_N(cpu, v & 0x80000000);
 	CPU_SET_FLAG_Z(cpu, !v);
 }
@@ -34,8 +34,6 @@ static void exec_alu_ands(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 		exec_alu_flags_logical(cpu, v);
-	else
-		cpu->regs.cpsr = *cpu->regs.spsr;
 }
 
 static void exec_alu_eor(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -49,8 +47,6 @@ static void exec_alu_eors(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 		exec_alu_flags_logical(cpu, v);
-	else
-		cpu->regs.cpsr = *cpu->regs.spsr;
 }
 
 static void exec_alu_sub(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -65,11 +61,7 @@ static void exec_alu_subs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	if (rd != CPU_REG_PC)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op1, op2);
-		CPU_SET_FLAG_C(cpu, op2 > op1);
-	}
-	else
-	{
-		cpu->regs.cpsr = *cpu->regs.spsr;
+		CPU_SET_FLAG_C(cpu, op2 <= op1);
 	}
 }
 
@@ -85,11 +77,7 @@ static void exec_alu_rsbs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	if (rd != CPU_REG_PC)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op2, op1);
-		CPU_SET_FLAG_C(cpu, op1 > op2);
-	}
-	else
-	{
-		cpu->regs.cpsr = *cpu->regs.spsr;
+		CPU_SET_FLAG_C(cpu, op1 <= op2);
 	}
 }
 
@@ -106,10 +94,6 @@ static void exec_alu_adds(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op1, op2);
 		CPU_SET_FLAG_C(cpu, v < op1);
-	}
-	else
-	{
-		cpu->regs.cpsr = *cpu->regs.spsr;
 	}
 }
 
@@ -128,10 +112,6 @@ static void exec_alu_adcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 		exec_alu_flags_arithmetical(cpu, v, op1, op2);
 		CPU_SET_FLAG_C(cpu, c ? v <= op1 : v < op1);
 	}
-	else
-	{
-		cpu->regs.cpsr = *cpu->regs.spsr;
-	}
 }
 
 static void exec_alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -142,16 +122,12 @@ static void exec_alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 static void exec_alu_sbcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
 	uint32_t c = CPU_GET_FLAG_C(cpu);
-	uint32_t v = op1 - op2 + c - 1;
+	uint32_t v = op1 - (op2 + 1 - c);
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op1, op2);
-		CPU_SET_FLAG_C(cpu, c ? op2 >= op1 : op2 > op1);
-	}
-	else
-	{
-		cpu->regs.cpsr = *cpu->regs.spsr;
+		CPU_SET_FLAG_C(cpu, c ? op2 <= op1 : v < op1);
 	}
 }
 
@@ -163,16 +139,12 @@ static void exec_alu_rsc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 static void exec_alu_rscs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
 	uint32_t c = CPU_GET_FLAG_C(cpu);
-	uint32_t v = op2 - op1 + c - 1;
+	uint32_t v = op2 - (op1 + 1 - c);
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op2, op1);
-		CPU_SET_FLAG_C(cpu, op1 + 1 - c > op2);
-	}
-	else
-	{
-		cpu->regs.cpsr = *cpu->regs.spsr;
+		CPU_SET_FLAG_C(cpu, c ? op1 <= op2 : v < op2);
 	}
 }
 
@@ -196,7 +168,7 @@ static void exec_alu_cmps(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	if (rd != CPU_REG_PC)
 	{
 		exec_alu_flags_arithmetical(cpu, v, op2, op1);
-		CPU_SET_FLAG_C(cpu, op2 > op1);
+		CPU_SET_FLAG_C(cpu, op2 <= op1);
 	}
 }
 
@@ -222,8 +194,6 @@ static void exec_alu_orrs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 		exec_alu_flags_logical(cpu, v);
-	else
-		cpu->regs.cpsr = *cpu->regs.spsr;
 }
 
 static void exec_alu_mov(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -239,8 +209,6 @@ static void exec_alu_movs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 		exec_alu_flags_logical(cpu, v);
-	else
-		cpu->regs.cpsr = *cpu->regs.spsr;
 }
 
 static void exec_alu_bic(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -254,8 +222,6 @@ static void exec_alu_bics(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 		exec_alu_flags_logical(cpu, v);
-	else
-		cpu->regs.cpsr = *cpu->regs.spsr;
 }
 
 static void exec_alu_mvn(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -271,17 +237,15 @@ static void exec_alu_mvns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 		exec_alu_flags_logical(cpu, v);
-	else
-		cpu->regs.cpsr = *cpu->regs.spsr;
 }
 
 #define ARM_ALU_DECODEIR(cpu, pcoff) \
 	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
 	uint32_t op1r = (cpu->instr_opcode >> 16) & 0xF; \
-	uint32_t op1 = cpu->regs.r[op1r]; \
+	uint32_t op1 = cpu_get_reg(cpu, op1r); \
 	op1 += (op1r == CPU_REG_PC) ? pcoff : 0; \
 	uint32_t op2r = (cpu->instr_opcode >>  0) & 0xF; \
-	uint32_t op2s = cpu->regs.r[op2r]; \
+	uint32_t op2s = cpu_get_reg(cpu, op2r); \
 	op2s += (op2r == CPU_REG_PC) ? pcoff : 0
 
 #define ARM_ALU_DECODEI(cpu) \
@@ -289,7 +253,7 @@ static void exec_alu_mvns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	ARM_ALU_DECODEIR(cpu, 8)
 
 #define ARM_ALU_DECODER(cpu) \
-	uint8_t shift = cpu->regs.r[(cpu->instr_opcode >> 8) & 0xF] & 0xFF; \
+	uint8_t shift = cpu_get_reg(cpu, (cpu->instr_opcode >> 8) & 0xF) & 0xFF; \
 	ARM_ALU_DECODEIR(cpu, 12)
 
 #define ARM_ALU_DECODEP(cpu) \
@@ -298,13 +262,18 @@ static void exec_alu_mvns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t op1 = (cpu->instr_opcode >> 16) & 0xF; \
 	uint32_t op2 = (cpu->instr_opcode >>  0) & 0xF
 
-#define ARM_ALU_OP_ROT(op, rot, rot_name, rot_opi, rot_opr) \
+#define ARM_ALU_OP_ROT(op, ctest, sflag, useout, rot, rot_name, rot_opi, rot_opr) \
 static void exec_##op##_##rot##i(cpu_t *cpu) \
 { \
 	ARM_ALU_DECODEI(cpu); \
 	rot_opi \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	if (rd != CPU_REG_PC) \
+	if (sflag && rd == CPU_REG_PC) \
+	{ \
+		cpu->regs.cpsr = *cpu->regs.spsr; \
+		cpu_update_mode(cpu); \
+	} \
+	if (!useout || rd != CPU_REG_PC) \
 		cpu_inc_pc(cpu, 4); \
 } \
 static void print_##op##_##rot##i(cpu_t *cpu, char *data, size_t size) \
@@ -323,13 +292,18 @@ static void exec_##op##_##rot##r(cpu_t *cpu) \
 	ARM_ALU_DECODER(cpu); \
 	rot_opr \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	if (rd != CPU_REG_PC) \
+	if (sflag && rd == CPU_REG_PC) \
+	{ \
+		cpu->regs.cpsr = *cpu->regs.spsr; \
+		cpu_update_mode(cpu); \
+	} \
+	if (!useout || rd != CPU_REG_PC) \
 		cpu_inc_pc(cpu, 4); \
 } \
 static void print_##op##_##rot##r(cpu_t *cpu, char *data, size_t size) \
 { \
 	ARM_ALU_DECODEP(cpu); \
-	snprintf(data, size, "%s r%d, r%d, r%d, " rot_name " r%d", #op, rd, op1, op2, shift); \
+	snprintf(data, size, "%s r%d, r%d, r%d, " rot_name " r%d", #op, rd, op1, op2, shift >> 1); \
 } \
 static const cpu_instr_t arm_##op##_##rot##r = \
 { \
@@ -338,42 +312,74 @@ static const cpu_instr_t arm_##op##_##rot##r = \
 	.print = print_##op##_##rot##r, \
 };\
 
-#define ARM_ALU_LLI(ctest) uint32_t op2 = ARM_LSL(op2s, shift); if (!ctest || shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (32 - shift))); }
-#define ARM_ALU_LLR(ctest) uint32_t op2 = ARM_LSL(op2s, shift); if (!ctest || shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (32 - shift))); }
-#define ARM_ALU_LRI(ctest) uint32_t op2 = ARM_LSR(op2s, shift ? shift : 32);
-#define ARM_ALU_LRR(ctest) uint32_t op2 = ARM_LSR(op2s, shift);
-#define ARM_ALU_ARI(ctest) uint32_t op2 = ARM_ASR(op2s, shift ? shift : 32);
-#define ARM_ALU_ARR(ctest) uint32_t op2 = ARM_ASR(op2s, shift);
+#define ARM_ALU_LLI(ctest) uint32_t op2 = ARM_LSL(op2s, shift); if (ctest && shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (32 - shift))); }
+#define ARM_ALU_LLR(ctest) uint32_t op2 = ARM_LSL(op2s, shift); if (ctest && shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (32 - shift))); }
+#define ARM_ALU_LRI(ctest) uint32_t op2 = ARM_LSR(op2s, shift ? shift : 32); if (ctest) { CPU_SET_FLAG_C(cpu, (shift == 0) ? (op2s & 0x80000000) : (op2s & (1 << (shift - 1)))); }
+#define ARM_ALU_LRR(ctest) uint32_t op2 = ARM_LSR(op2s, shift); if (ctest && shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (shift - 1))); }
+#define ARM_ALU_ARI(ctest) \
+	uint32_t op2; \
+	if (!shift) \
+	{ \
+		op2 = op2s & 0x80000000; \
+		if (op2) \
+		{ \
+			op2 = 0xFFFFFFFFu; \
+			if (ctest) \
+				CPU_SET_FLAG_C(cpu, 1); \
+		} \
+		else \
+		{ \
+			if (ctest) \
+				CPU_SET_FLAG_C(cpu, 0); \
+		} \
+	} \
+	else \
+	{ \
+		op2 = ARM_ASR(op2s, shift ? shift : 32); \
+		if (ctest) \
+			CPU_SET_FLAG_C(cpu, op2s & (1 << (shift - 1))); \
+	}
+#define ARM_ALU_ARR(ctest) uint32_t op2 = ARM_ASR(op2s, shift); if (ctest && shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (shift - 1))); }
 #define ARM_ALU_RRI(ctest) \
 	uint32_t op2; \
-	if (shift == 32) \
+	if (!shift) \
 	{ \
-		op2 = op2s >> 1; \
-		op2 |= CPU_GET_FLAG_C(cpu) >> 31; \
-		CPU_SET_FLAG_C(cpu, op2s & 0x1 ); \
+		op2 = ARM_ROR(op2s, 1) & 0x7FFFFFFF; \
+		op2 |= CPU_GET_FLAG_C(cpu) << 31; \
+		if (ctest) \
+			CPU_SET_FLAG_C(cpu, op2s & 0x1); \
 	} \
 	else \
 	{ \
 		op2 = ARM_ROR(op2s, shift); \
+		if (ctest) \
+			CPU_SET_FLAG_C(cpu, op2s & (1 << (shift - 1))); \
 	}
-#define ARM_ALU_RRR(ctest) uint32_t op2 = ARM_ROR(op2s, shift);
+#define ARM_ALU_RRR(ctest) uint32_t op2 = ARM_ROR(op2s, shift); if (ctest && shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (shift - 1))); }
 
-#define ARM_ALU_OP(op, ctest) \
-ARM_ALU_OP_ROT(op, ll, "LSL", ARM_ALU_LLI(ctest), ARM_ALU_LLR(ctest)) \
-ARM_ALU_OP_ROT(op, lr, "LSR", ARM_ALU_LRI(ctest), ARM_ALU_LRR(ctest)) \
-ARM_ALU_OP_ROT(op, ar, "ASR", ARM_ALU_ARI(ctest), ARM_ALU_ARR(ctest)) \
-ARM_ALU_OP_ROT(op, rr, "ROR", ARM_ALU_RRI(ctest), ARM_ALU_RRR(ctest)) \
+#define ARM_ALU_OP(op, sflag, ctest, useout) \
+ARM_ALU_OP_ROT(op, ctest, sflag, useout, ll, "LSL", ARM_ALU_LLI(ctest), ARM_ALU_LLR(ctest)) \
+ARM_ALU_OP_ROT(op, ctest, sflag, useout, lr, "LSR", ARM_ALU_LRI(ctest), ARM_ALU_LRR(ctest)) \
+ARM_ALU_OP_ROT(op, ctest, sflag, useout, ar, "ASR", ARM_ALU_ARI(ctest), ARM_ALU_ARR(ctest)) \
+ARM_ALU_OP_ROT(op, ctest, sflag, useout, rr, "ROR", ARM_ALU_RRI(ctest), ARM_ALU_RRR(ctest)) \
 static void exec_##op##_imm(cpu_t *cpu) \
 { \
 	uint32_t shift = (cpu->instr_opcode >> 8) & 0xF; \
 	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
 	uint32_t op1r = (cpu->instr_opcode >> 16) & 0xF; \
-	uint32_t op1 = cpu->regs.r[op1r]; \
+	uint32_t op1 = cpu_get_reg(cpu, op1r); \
 	op1 += (op1r == CPU_REG_PC) ? 8 : 0; \
 	uint32_t op2s = (cpu->instr_opcode >> 0) & 0xFF; \
 	uint32_t op2 = ARM_ROR(op2s, shift * 2); \
+	if (ctest) \
+		CPU_SET_FLAG_C(cpu, op2s & (1 << ((shift * 2) - 1))); \
+	if (sflag && rd == CPU_REG_PC) \
+	{ \
+		cpu->regs.cpsr = *cpu->regs.spsr; \
+		cpu_update_mode(cpu); \
+	} \
 	exec_alu_##op(cpu, rd, op1, op2); \
-	if (rd != CPU_REG_PC) \
+	if (!useout || rd != CPU_REG_PC) \
 		cpu_inc_pc(cpu, 4); \
 } \
 static void print_##op##_imm(cpu_t *cpu, char *data, size_t size) \
@@ -391,26 +397,26 @@ static const cpu_instr_t arm_##op##_imm = \
 	.print = print_##op##_imm, \
 };
 
-#define ARM_ALU_OPS(op, ctest) \
-	ARM_ALU_OP(op   , 0) \
-	ARM_ALU_OP(op##s, ctest)
+#define ARM_ALU_OPS(op, ctest, useout) \
+	ARM_ALU_OP(op   , 0, 0    , useout) \
+	ARM_ALU_OP(op##s, 1, ctest, useout)
 
-ARM_ALU_OPS(and, 1);
-ARM_ALU_OPS(eor, 1);
-ARM_ALU_OPS(sub, 0);
-ARM_ALU_OPS(rsb, 0);
-ARM_ALU_OPS(add, 0);
-ARM_ALU_OPS(adc, 0);
-ARM_ALU_OPS(sbc, 0);
-ARM_ALU_OPS(rsc, 0);
-ARM_ALU_OP(tsts, 1);
-ARM_ALU_OP(teqs, 1);
-ARM_ALU_OP(cmps, 0);
-ARM_ALU_OP(cmns, 0);
-ARM_ALU_OPS(orr, 1);
-ARM_ALU_OPS(mov, 1);
-ARM_ALU_OPS(bic, 1);
-ARM_ALU_OPS(mvn, 1);
+ARM_ALU_OPS(and, 1, 1);
+ARM_ALU_OPS(eor, 1, 1);
+ARM_ALU_OPS(sub, 0, 1);
+ARM_ALU_OPS(rsb, 0, 1);
+ARM_ALU_OPS(add, 0, 1);
+ARM_ALU_OPS(adc, 0, 1);
+ARM_ALU_OPS(sbc, 0, 1);
+ARM_ALU_OPS(rsc, 0, 1);
+ARM_ALU_OP(tsts, 1, 1, 0);
+ARM_ALU_OP(teqs, 1, 1, 0);
+ARM_ALU_OP(cmps, 1, 0, 0);
+ARM_ALU_OP(cmns, 1, 0, 0);
+ARM_ALU_OPS(orr, 1, 1);
+ARM_ALU_OPS(mov, 1, 1);
+ARM_ALU_OPS(bic, 1, 1);
+ARM_ALU_OPS(mvn, 1, 1);
 
 static const cpu_instr_t arm_mul =
 {
@@ -997,18 +1003,24 @@ static void exec_mrs_##n(cpu_t *cpu) \
 { \
 	uint32_t v; \
 	if (psr) \
-		v = cpu->regs.cpsr; \
-	else \
 		v = *cpu->regs.spsr; \
+	else \
+		v = cpu->regs.cpsr; \
 	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
 	cpu_set_reg(cpu, rd, v); \
 	cpu_inc_pc(cpu,  4); \
 	cpu->instr_delay = 1; \
 } \
+static void print_mrs_##n(cpu_t *cpu, char *data, size_t size) \
+{ \
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF; \
+	snprintf(data, size, "mrs r%d, %s", rd, psr ? "spsr" : "cpsr"); \
+} \
 static const cpu_instr_t arm_mrs_##n = \
 { \
 	.name = "mrs " #n, \
 	.exec = exec_mrs_##n, \
+	.print = print_mrs_##n, \
 }
 
 ARM_MRS(rc, 0);
@@ -1019,7 +1031,7 @@ static void exec_msr_##n(cpu_t *cpu) \
 { \
 	uint32_t v; \
 	if (imm) \
-		v = ARM_ROR(cpu->instr_opcode & 0xF, ((cpu->instr_opcode >> 8) & 0xF) * 2); \
+		v = ARM_ROR(cpu->instr_opcode & 0xFF, ((cpu->instr_opcode >> 8) & 0xF) * 2); \
 	else \
 		v = cpu_get_reg(cpu, cpu->instr_opcode & 0xF); \
 	uint32_t mask = 0; \
@@ -1054,7 +1066,7 @@ static void print_msr_##n(cpu_t *cpu, char *data, size_t size) \
 	if (cpu->instr_opcode & (1 << 16)) \
 		flags[fn++] = 'c'; \
 	if (imm) \
-		snprintf(data, size, "msr %s_%s #0x%x, ROR#0x%x", psr ? "spsr" : "cpsr", flags, cpu->instr_opcode & 0xF, ((cpu->instr_opcode >> 8) & 0xF) * 2); \
+		snprintf(data, size, "msr %s_%s #0x%x, ROR#0x%x", psr ? "spsr" : "cpsr", flags, cpu->instr_opcode & 0xFF, ((cpu->instr_opcode >> 8) & 0xF) * 2); \
 	else \
 		snprintf(data, size, "msr %s_%s r%d", psr ? "spsr" : "cpsr", flags, cpu->instr_opcode & 0xF); \
 } \
@@ -1114,7 +1126,7 @@ static void print_b(cpu_t *cpu, char *data, size_t size)
 	int32_t v = cpu->instr_opcode & 0x7FFFFF;
 	if (cpu->instr_opcode & 0x800000)
 		v = -(~v & 0x7FFFFF) - 1;
-	snprintf(data, size, "b %c0x%x", v < 0 ? '-' : '+', v < 0 ? -v : v);
+	snprintf(data, size, "b %c0x%x", v < 0 ? '-' : '+', v < 0 ? -v * 4 : v * 4);
 }
 
 static const cpu_instr_t arm_b =
@@ -1139,7 +1151,7 @@ static void print_bl(cpu_t *cpu, char *data, size_t size)
 	int32_t v = cpu->instr_opcode & 0x7FFFFF;
 	if (cpu->instr_opcode & 0x800000)
 		v = -(~v & 0x7FFFFF) - 1;
-	snprintf(data, size, "bl %c0x%x", v < 0 ? '-' : '+', v < 0 ? -v : v);
+	snprintf(data, size, "bl %c0x%x", v < 0 ? '-' : '+', v < 0 ? -v * 4 : v * 4);
 }
 
 static const cpu_instr_t arm_bl =

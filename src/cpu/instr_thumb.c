@@ -5,9 +5,9 @@
 #include <string.h>
 #include <stdio.h>
 
-#define THUMB_LSL(v, s) ((v) << (s))
-#define THUMB_LSR(v, s) ((v) >> (s))
-#define THUMB_ASR(v, s) ((int32_t)(v) >> (s))
+#define THUMB_LSL(v, s) (((s) >= 32) ? 0 : ((v) << (s)))
+#define THUMB_LSR(v, s) (((s) >= 32) ? 0 : ((v) >> (s)))
+#define THUMB_ASR(v, s) (((s) >= 32) ? (v & 0x80000000) : (uint32_t)((int32_t)(v) >> (s)))
 #define THUMB_ROR(v, s) (((v) >> (s)) | ((v) << (32 - (s))))
 
 #define THUMB_SHIFTED(n, shiftop) \
@@ -63,8 +63,8 @@ static void exec_##n##_##v(cpu_t *cpu) \
 		cpu_set_reg(cpu, rdr, res); \
 		CPU_SET_FLAG_N(cpu, res & 0x80000000); \
 		CPU_SET_FLAG_Z(cpu, !res); \
-		CPU_SET_FLAG_C(cpu, val > rs); \
-		CPU_SET_FLAG_V(cpu, ((rs ^ val) & 0x80000000) && ((rs ^ res) & 0x80000000)); \
+		CPU_SET_FLAG_C(cpu, val <= rs); \
+		CPU_SET_FLAG_V(cpu, (res ^ rs) & 0x80000000); \
 	} \
 	else \
 	{ \
@@ -73,7 +73,7 @@ static void exec_##n##_##v(cpu_t *cpu) \
 		CPU_SET_FLAG_N(cpu, res & 0x80000000); \
 		CPU_SET_FLAG_Z(cpu, !res); \
 		CPU_SET_FLAG_C(cpu, res < rs); \
-		CPU_SET_FLAG_V(cpu, ((rs ^ val) & 0x80000000) && ((rs ^ res) & 0x80000000)); \
+		CPU_SET_FLAG_V(cpu, (res ^ rs) & 0x80000000); \
 	} \
 	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay = 1; \
