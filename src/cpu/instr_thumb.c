@@ -10,6 +10,19 @@
 #define THUMB_ASR(v, s) (((s) >= 32) ? (v & 0x80000000) : (uint32_t)((int32_t)(v) >> (s)))
 #define THUMB_ROR(v, s) (((v) >> (s)) | ((v) << (32 - (s))))
 
+static void update_flags_logical(cpu_t *cpu, uint32_t v)
+{
+	CPU_SET_FLAG_N(cpu, v & 0x80000000);
+	CPU_SET_FLAG_Z(cpu, !v);
+}
+
+static void update_flags_arithmetical(cpu_t *cpu, uint32_t v, uint32_t op1)
+{
+	CPU_SET_FLAG_V(cpu, (v ^ op1) & 0x80000000);
+	CPU_SET_FLAG_N(cpu, v & 0x80000000);
+	CPU_SET_FLAG_Z(cpu, !v);
+}
+
 #define THUMB_SHIFTED(n, shiftop) \
 static void exec_##n##_imm(cpu_t *cpu) \
 { \
@@ -19,8 +32,7 @@ static void exec_##n##_imm(cpu_t *cpu) \
 	uint32_t rss = cpu_get_reg(cpu, rsr); \
 	shiftop; \
 	cpu_set_reg(cpu, rdr, rs); \
-	CPU_SET_FLAG_Z(cpu, !rs); \
-	CPU_SET_FLAG_N(cpu, rs & 0x80000000); \
+	update_flags_logical(cpu, rs); \
 	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay = 1; \
 } \
@@ -38,9 +50,28 @@ static const cpu_instr_t thumb_##n##_imm = \
 	.print = print_##n##_imm, \
 }
 
-#define THUMB_SHIFTED_LSL uint32_t rs = THUMB_LSL(rss, shift); if (shift) { CPU_SET_FLAG_C(cpu, rs & (1 << (32 - shift))); }
-#define THUMB_SHIFTED_LSR shift = shift ? shift : 32; uint32_t rs = THUMB_LSR(rss, shift); CPU_SET_FLAG_C(cpu, rss >> (shift - 1));
-#define THUMB_SHIFTED_ASR shift = shift ? shift : 32; uint32_t rs = THUMB_ASR(rss, shift); CPU_SET_FLAG_C(cpu, rss >> (shift - 1));
+#define THUMB_SHIFTED_LSL uint32_t rs = THUMB_LSL(rss, shift); if (shift) { CPU_SET_FLAG_C(cpu, rss & (1 << (32 - shift))); }
+#define THUMB_SHIFTED_LSR shift = shift ? shift : 32; uint32_t rs = THUMB_LSR(rss, shift); CPU_SET_FLAG_C(cpu, rss & (1 << (shift - 1)));
+#define THUMB_SHIFTED_ASR \
+	uint32_t rs; \
+	if (!shift) \
+	{ \
+		rs = rss & 0x80000000; \
+		if (rs) \
+		{ \
+			rs = 0xFFFFFFFFu; \
+			CPU_SET_FLAG_C(cpu, 1); \
+		} \
+		else \
+		{ \
+			CPU_SET_FLAG_C(cpu, 0); \
+		} \
+	} \
+	else \
+	{ \
+		rs = THUMB_ASR(rss, shift); \
+		CPU_SET_FLAG_C(cpu, rss & (1 << (shift - 1)));  \
+	} \
 
 THUMB_SHIFTED(lsl, THUMB_SHIFTED_LSL);
 THUMB_SHIFTED(lsr, THUMB_SHIFTED_LSR);
@@ -61,19 +92,15 @@ static void exec_##n##_##v(cpu_t *cpu) \
 	{ \
 		uint32_t res = rs - val; \
 		cpu_set_reg(cpu, rdr, res); \
-		CPU_SET_FLAG_N(cpu, res & 0x80000000); \
-		CPU_SET_FLAG_Z(cpu, !res); \
+		update_flags_arithmetical(cpu, res, rs); \
 		CPU_SET_FLAG_C(cpu, val <= rs); \
-		CPU_SET_FLAG_V(cpu, (res ^ rs) & 0x80000000); \
 	} \
 	else \
 	{ \
 		uint32_t res = rs + val; \
 		cpu_set_reg(cpu, rdr, res); \
-		CPU_SET_FLAG_N(cpu, res & 0x80000000); \
-		CPU_SET_FLAG_Z(cpu, !res); \
+		update_flags_arithmetical(cpu, res, rs); \
 		CPU_SET_FLAG_C(cpu, res < rs); \
-		CPU_SET_FLAG_V(cpu, (res ^ rs) & 0x80000000); \
 	} \
 	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay = 1; \
@@ -103,18 +130,15 @@ THUMB_ADDSUBR(sub, imm, 1, 1);
 static void mcas_mov(cpu_t *cpu, uint32_t r, uint32_t nn)
 {
 	cpu_set_reg(cpu, r, nn);
-	CPU_SET_FLAG_Z(cpu, !nn);
-	CPU_SET_FLAG_N(cpu, nn & 0x80000000);
+	update_flags_logical(cpu, nn);
 }
 
 static void mcas_cmp(cpu_t *cpu, uint32_t r, uint32_t nn)
 {
 	uint32_t rv = cpu_get_reg(cpu, r);
 	uint32_t res = rv - nn;
-	CPU_SET_FLAG_Z(cpu, !res);
-	CPU_SET_FLAG_N(cpu, res & 0x80000000);
+	update_flags_arithmetical(cpu, res, rv);
 	CPU_SET_FLAG_C(cpu, nn > rv);
-	CPU_SET_FLAG_V(cpu, ((rv ^ nn) & 0x80000000) && ((rv ^ res) & 0x80000000));
 }
 
 static void mcas_add(cpu_t *cpu, uint32_t r, uint32_t nn)
@@ -122,10 +146,8 @@ static void mcas_add(cpu_t *cpu, uint32_t r, uint32_t nn)
 	uint32_t rv = cpu_get_reg(cpu, r);
 	uint32_t res = rv + nn;
 	cpu_set_reg(cpu, r, res);
-	CPU_SET_FLAG_Z(cpu, !res);
-	CPU_SET_FLAG_N(cpu, res & 0x80000000);
+	update_flags_arithmetical(cpu, res, rv);
 	CPU_SET_FLAG_C(cpu, res < nn);
-	CPU_SET_FLAG_V(cpu, ((rv ^ nn) & 0x80000000) && ((rv ^ res) & 0x80000000));
 }
 
 static void mcas_sub(cpu_t *cpu, uint32_t r, uint32_t nn)
@@ -133,10 +155,8 @@ static void mcas_sub(cpu_t *cpu, uint32_t r, uint32_t nn)
 	uint32_t rv = cpu_get_reg(cpu, r);
 	uint32_t res = rv - nn;
 	cpu_set_reg(cpu, r, res);
-	CPU_SET_FLAG_Z(cpu, !res);
-	CPU_SET_FLAG_N(cpu, res & 0x80000000);
-	CPU_SET_FLAG_C(cpu, nn > rv);
-	CPU_SET_FLAG_V(cpu, ((rv ^ nn) & 0x80000000) && ((rv ^ res) & 0x80000000));
+	update_flags_arithmetical(cpu, res, rv);
+	CPU_SET_FLAG_C(cpu, nn <= rv);
 }
 
 #define THUMB_MCAS_I8R(n, r) \
@@ -192,161 +212,147 @@ THUMB_MCAS_I8R(sub, 5);
 THUMB_MCAS_I8R(sub, 6);
 THUMB_MCAS_I8R(sub, 7);
 
-static void alu_flags_logical(cpu_t *cpu, uint32_t v)
+static void alu_and(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	CPU_SET_FLAG_N(cpu, v & 0x80000000);
-	CPU_SET_FLAG_Z(cpu, !v);
+	uint32_t v = rd & rs;
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 }
 
-static void alu_flags_arithmetical(cpu_t *cpu, uint32_t v, uint32_t op1, uint32_t op2)
+static void alu_eor(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	CPU_SET_FLAG_V(cpu, ((op1 ^ op2) & 0x80000000) && ((op1 ^ v) & 0x80000000));
-	CPU_SET_FLAG_N(cpu, v & 0x80000000);
-	CPU_SET_FLAG_Z(cpu, !v);
+	uint32_t v = rd ^ rs;
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 }
 
-static void alu_and(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_lsr(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t v = cpu_get_reg(cpu, rd) & rs;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
-}
-
-static void alu_eor(cpu_t *cpu, uint32_t rd, uint32_t rs)
-{
-	uint32_t v = cpu_get_reg(cpu, rd) ^ rs;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
-}
-
-static void alu_lsr(cpu_t *cpu, uint32_t rd, uint32_t rs)
-{
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = THUMB_LSR(reg, rs);
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
+	uint32_t v = THUMB_LSR(rd, rs);
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 	if (rs)
-		CPU_SET_FLAG_C(cpu, reg & (1 << (rs - 1)));
+		CPU_SET_FLAG_C(cpu, rd & (1 << (rs - 1)));
 }
 
-static void alu_lsl(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_lsl(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = THUMB_LSL(reg, rs);
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
+	uint32_t v = THUMB_LSL(rd, rs);
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 	if (rs)
-		CPU_SET_FLAG_C(cpu, reg & (1 << (32 - rs)));
+		CPU_SET_FLAG_C(cpu, rd & (1 << (32 - rs)));
 }
 
-static void alu_asr(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_asr(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = THUMB_ASR(reg, rs);
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
+	uint32_t v = THUMB_ASR(rd, rs);
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 	if (rs)
-		CPU_SET_FLAG_C(cpu, reg & (1 << (32 - rs)));
+		CPU_SET_FLAG_C(cpu, rd & (1 << (32 - rs)));
 }
 
-static void alu_adc(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_adc(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
 	uint32_t c = CPU_GET_FLAG_C(cpu);
-	uint32_t v = reg + rs + c;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_arithmetical(cpu, v, reg, rs);
-	CPU_SET_FLAG_C(cpu, c ? v <= reg : v < reg);
+	uint32_t v = rd + rs + c;
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_arithmetical(cpu, v, rd);
+	CPU_SET_FLAG_C(cpu, c ? v <= rd : v < rd);
 }
 
-static void alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
 	uint32_t c = CPU_GET_FLAG_C(cpu);
-	uint32_t v = reg - rs + c - 1;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_arithmetical(cpu, v, reg, rs);
-	CPU_SET_FLAG_C(cpu, c ? rs >= reg : rs > reg);
+	uint32_t v = rd - (rs + 1 - c);
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_arithmetical(cpu, v, rd);
+	CPU_SET_FLAG_C(cpu, c ? rs <= rd : v < rd);
 }
 
-static void alu_ror(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_ror(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = THUMB_ROR(reg, rs);
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
+	uint32_t v = THUMB_ROR(rd, rs);
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 	if (rs)
-		CPU_SET_FLAG_C(cpu, reg & (1 << (rs - 1)));
+		CPU_SET_FLAG_C(cpu, rd & (1 << (rs - 1)));
 }
 
-static void alu_tst(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_tst(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = reg & rs;
-	alu_flags_logical(cpu, v);
+	(void)rdr;
+	uint32_t v = rd & rs;
+	update_flags_logical(cpu, v);
 }
 
-static void alu_neg(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_neg(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
+	(void)rd;
 	uint32_t v = -rs;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_arithmetical(cpu, v, 0, rs);
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_arithmetical(cpu, v, 0);
 	CPU_SET_FLAG_C(cpu, rs > 0);
 }
 
-static void alu_cmp(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_cmp(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = reg - rs;
-	alu_flags_arithmetical(cpu, v, reg, rs);
-	CPU_SET_FLAG_C(cpu, rs > reg);
+	(void)rdr;
+	uint32_t v = rd - rs;
+	update_flags_arithmetical(cpu, v, rd);
+	CPU_SET_FLAG_C(cpu, rs <= rd);
 }
 
-static void alu_cmn(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_cmn(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = reg + rs;
-	alu_flags_arithmetical(cpu, v, reg, rs);
-	CPU_SET_FLAG_C(cpu, v < reg);
+	(void)rdr;
+	uint32_t v = rd + rs;
+	update_flags_arithmetical(cpu, v, rd);
+	CPU_SET_FLAG_C(cpu, v < rd);
 }
 
-static void alu_orr(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_orr(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = reg | rs;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
+	uint32_t v = rd | rs;
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 }
 
-static void alu_mul(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_mul(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = reg * rs;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
+	uint32_t v = rd * rs;
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 }
 
-static void alu_bic(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_bic(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	uint32_t reg = cpu_get_reg(cpu, rd);
-	uint32_t v = reg & ~rs;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
+	uint32_t v = rd & ~rs;
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 }
 
-static void alu_mvn(cpu_t *cpu, uint32_t rd, uint32_t rs)
+static void alu_mvn(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
+	(void)rd;
 	uint32_t v = ~rs;
-	cpu_set_reg(cpu, rd, v);
-	alu_flags_logical(cpu, v);
+	cpu_set_reg(cpu, rdr, v);
+	update_flags_logical(cpu, v);
 }
 
 #define THUMB_ALU(n) \
 static void exec_alu_##n(cpu_t *cpu) \
 { \
-	uint32_t rd = (cpu->instr_opcode >> 0) & 0x7; \
-	uint32_t rs = (cpu->instr_opcode >> 3) & 0x7; \
-	alu_##n(cpu, rd, rs); \
+	uint32_t rdr = (cpu->instr_opcode >> 0) & 0x7; \
+	uint32_t rsr = (cpu->instr_opcode >> 3) & 0x7; \
+	uint32_t rd = cpu_get_reg(cpu, rdr); \
+	if (rdr == CPU_REG_PC) \
+		rd += 4; \
+	uint32_t rs = cpu_get_reg(cpu, rsr); \
+	if (rsr == CPU_REG_PC) \
+		rs += 4; \
+	alu_##n(cpu, rd, rdr, rs); \
 	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay = 1; \
 } \
@@ -382,25 +388,40 @@ THUMB_ALU(mvn);
 
 static void hi_addh(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
-	cpu_set_reg(cpu, rdr, rd + rs);
-	if (rd == CPU_REG_PC)
+	if (rdr == CPU_REG_PC)
+	{
+		cpu_set_reg(cpu, rdr, (rd + rs) & ~1);
 		cpu->instr_delay += 2;
+	}
+	else
+	{
+		cpu_set_reg(cpu, rdr, rd + rs);
+		cpu_inc_pc(cpu, 2);
+	}
 }
 
 static void hi_cmph(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
 	(void)rdr;
 	uint32_t res = rd - rs;
-	alu_flags_arithmetical(cpu, res, rd, rs);
-	CPU_SET_FLAG_C(cpu, rs > rd);
+	update_flags_arithmetical(cpu, res, rd);
+	CPU_SET_FLAG_C(cpu, rs <= rd);
+	cpu_inc_pc(cpu, 2);
 }
 
 static void hi_movh(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 {
 	(void)rd;
-	cpu_set_reg(cpu, rdr, rs);
-	if (rd == CPU_REG_PC)
+	if (rdr == CPU_REG_PC)
+	{
+		cpu_set_reg(cpu, rdr, rs & ~1);
 		cpu->instr_delay += 2;
+	}
+	else
+	{
+		cpu_set_reg(cpu, rdr, rs);
+		cpu_inc_pc(cpu, 2);
+	}
 }
 
 #define THUMB_HI(n) \
@@ -415,7 +436,6 @@ static void exec_##n(cpu_t *cpu) \
 	uint32_t rs = cpu_get_reg(cpu, rsr); \
 	rs += (rsr == CPU_REG_PC) ? 4 : 0; \
 	hi_##n(cpu, rd, rdr, rs); \
-	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay++; \
 } \
 static void print_##n(cpu_t *cpu, char *data, size_t size) \
@@ -447,6 +467,10 @@ static void exec_bx(cpu_t *cpu)
 	{
 		CPU_SET_FLAG_T(cpu, 0);
 		rs &= ~3;
+	}
+	else
+	{ 
+		rs &= ~1;
 	}
 	cpu_set_reg(cpu, CPU_REG_PC, rs);
 	cpu->instr_delay += 3;
@@ -515,12 +539,16 @@ static void stld_strb(cpu_t *cpu, uint32_t rd, uint32_t rb, uint32_t ro)
 
 static void stld_ldr(cpu_t *cpu, uint32_t rd, uint32_t rb, uint32_t ro)
 {
-	cpu_set_reg(cpu, rd, mem_get32(cpu->mem, rb + ro));
+	uint32_t addr = rb + ro;
+	uint32_t v = mem_get32(cpu->mem, addr);
+	cpu_set_reg(cpu, rd, THUMB_ROR(v, (addr & 1) * 8));
 }
 
 static void stld_ldrh(cpu_t *cpu, uint32_t rd, uint32_t rb, uint32_t ro)
 {
-	cpu_set_reg(cpu, rd, mem_get16(cpu->mem, rb + ro));
+	uint32_t addr = rb + ro;
+	uint32_t v = mem_get16(cpu->mem, addr);
+	cpu_set_reg(cpu, rd, THUMB_ROR(v, (addr & 1) * 8));
 }
 
 static void stld_ldrb(cpu_t *cpu, uint32_t rd, uint32_t rb, uint32_t ro)
@@ -530,7 +558,13 @@ static void stld_ldrb(cpu_t *cpu, uint32_t rd, uint32_t rb, uint32_t ro)
 
 static void stld_ldrsh(cpu_t *cpu, uint32_t rd, uint32_t rb, uint32_t ro)
 {
-	cpu_set_reg(cpu, rd, (int16_t)mem_get8(cpu->mem, rb + ro));
+	uint32_t addr = rb + ro;
+	uint32_t v;
+	if (addr & 1)
+		v = (int8_t)mem_get8(cpu->mem, addr);
+	else
+		v = (int16_t)mem_get16(cpu->mem, addr);
+	cpu_set_reg(cpu, rd, v);
 }
 
 static void stld_ldrsb(cpu_t *cpu, uint32_t rd, uint32_t rb, uint32_t ro)
@@ -609,9 +643,15 @@ static void exec_##n##sp_r##r(cpu_t *cpu) \
 	uint32_t rd = (cpu->instr_opcode >> 8) & 0x7; \
 	uint32_t nn = ((cpu->instr_opcode >> 0) & 0xFF) * 4; \
 	if (st_ld) \
-		cpu_set_reg(cpu, rd, mem_get32(cpu->mem, cpu_get_reg(cpu, CPU_REG_SP) + nn)); \
+	{ \
+		uint32_t addr = cpu_get_reg(cpu, CPU_REG_SP) + nn; \
+		uint32_t v = mem_get32(cpu->mem, addr); \
+		cpu_set_reg(cpu, rd, THUMB_ROR(v, (addr & 3) * 8)); \
+	} \
 	else \
+	{ \
 		mem_set32(cpu->mem, cpu_get_reg(cpu, CPU_REG_SP) + nn, cpu_get_reg(cpu, rd)); \
+	} \
 	cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay = st_ld ? 3 : 2; \
 } \
@@ -619,7 +659,7 @@ static void print_##n##sp_r##r(cpu_t *cpu, char *data, size_t size) \
 { \
 	uint32_t rd = (cpu->instr_opcode >> 8) & 0x7; \
 	uint32_t nn = (cpu->instr_opcode >> 0) & 0xFF; \
-	snprintf(data, size, "str r%d, [sp, #0x%x]", rd, nn * 4); \
+	snprintf(data, size, #n " r%d, [sp, #0x%x]", rd, nn * 4); \
 } \
 static const cpu_instr_t thumb_##n##sp_r##r = \
 { \
@@ -718,48 +758,113 @@ static void exec_##n####next(cpu_t *cpu) \
 { \
 	uint32_t rl = cpu->instr_opcode & 0xFF; \
 	uint32_t sp = cpu_get_reg(cpu, base_reg); \
-	if (!down_up) \
-	{ \
-		uint32_t nregs = 0; \
-		for (int i = 0; i < 8; ++i) \
-		{ \
-			if (rl & (1 << i)) \
-				nregs++; \
-		} \
-		if (ext_reg) \
-			nregs++; \
-		sp -= 4 * nregs; \
-		cpu_set_reg(cpu, base_reg, sp); \
-	} \
+	bool pc_inc = true; \
+	uint32_t old_base = sp; \
+	uint32_t new_base; \
+	uint32_t nregs = 0; \
 	for (int i = 0; i < 8; ++i) \
 	{ \
-		if (!(rl & (1 << i))) \
-			continue; \
-		if (post_pre == down_up) \
-			sp += 4; \
-		if (st_ld) \
-			cpu_set_reg(cpu, i, mem_get32(cpu->mem, sp)); \
-		else \
-			mem_set32(cpu->mem, sp, cpu_get_reg(cpu, i)); \
-		if (post_pre != down_up) \
-			sp += 4; \
-		cpu->instr_delay++; \
+			if (rl & (1 << i)) \
+			nregs++; \
+	} \
+	if (ext_reg) \
+		nregs++; \
+	else if (!nregs) \
+		nregs = 0x10; \
+	if (!down_up) \
+	{ \
+		sp -= 4 * nregs; \
+		cpu_set_reg(cpu, base_reg, sp); \
+		new_base = sp; \
+	} \
+	else \
+	{ \
+		new_base = old_base + nregs * 4; \
+	} \
+	bool nowriteback = false; \
+	if (rl) \
+	{ \
+		bool first = true; \
+		for (int i = 0; i < 8; ++i) \
+		{ \
+			if (!(rl & (1 << i))) \
+				continue; \
+			if (post_pre == down_up) \
+				sp += 4; \
+			if (st_ld) \
+			{ \
+				if (i == base_reg) \
+					nowriteback = true; \
+				uint32_t v = mem_get32(cpu->mem, sp); \
+				if (i == CPU_REG_PC) \
+				{ \
+					pc_inc = false; \
+					v &= ~1; \
+				} \
+				cpu_set_reg(cpu, i, v); \
+			} \
+			else \
+			{ \
+				uint32_t v; \
+				if (i == base_reg) \
+				{ \
+					if (first) \
+						v = old_base; \
+					else \
+						v = new_base; \
+				} \
+				else \
+				{ \
+					v = cpu_get_reg(cpu, i); \
+				} \
+				if (i == CPU_REG_PC) \
+					v += 6; \
+				mem_set32(cpu->mem, sp, v); \
+			} \
+			if (post_pre != down_up) \
+				sp += 4; \
+			cpu->instr_delay++; \
+			first = false; \
+		} \
 	} \
 	if (ext_reg) \
 	{ \
 		if (post_pre == down_up) \
 			sp += 4; \
 		if (st_ld) \
+		{ \
 			cpu_set_reg(cpu, CPU_REG_PC, mem_get32(cpu->mem, sp)); \
+			pc_inc = false; \
+		} \
 		else \
+		{ \
 			mem_set32(cpu->mem, sp, cpu_get_reg(cpu, CPU_REG_LR)); \
+		} \
 		if (post_pre != down_up) \
 			sp += 4; \
 		cpu->instr_delay++; \
 	} \
-	if (down_up) \
+	else if (!rl) \
+	{ \
+		if (post_pre == down_up) \
+			sp += 0x4; \
+		if (st_ld) \
+		{ \
+			cpu_set_reg(cpu, CPU_REG_PC, mem_get32(cpu->mem, sp)); \
+			pc_inc = false; \
+		} \
+		else \
+		{ \
+			mem_set32(cpu->mem, sp, cpu_get_reg(cpu, CPU_REG_PC) + 6); \
+		} \
+		if (post_pre != down_up) \
+			sp += 0x4; \
+		sp += 0x3C; \
+	} \
+	if (!nowriteback && down_up) \
 		cpu_set_reg(cpu, base_reg, sp); \
-	cpu_inc_pc(cpu, 2); \
+	if (pc_inc) \
+		cpu_inc_pc(cpu, 2); \
 	cpu->instr_delay++; \
 } \
 static void print_##n####next(cpu_t *cpu, char *data, size_t size) \
@@ -821,26 +926,26 @@ static const cpu_instr_t thumb_##n####next = \
 	.print = print_##n####next, \
 }
 
-THUMB_PUSHPOP(push ,    , 1, 0, 0, 0, CPU_REG_SP);
-THUMB_PUSHPOP(pop  ,    , 0, 1, 1, 0, CPU_REG_SP);
-THUMB_PUSHPOP(push , _lr, 1, 0, 0, 1, CPU_REG_SP);
-THUMB_PUSHPOP(pop  , _pc, 0, 1, 1, 1, CPU_REG_SP);
-THUMB_PUSHPOP(stmia, _r0, 0, 1, 0, 0, 0);
-THUMB_PUSHPOP(stmia, _r1, 0, 1, 0, 0, 1);
-THUMB_PUSHPOP(stmia, _r2, 0, 1, 0, 0, 2);
-THUMB_PUSHPOP(stmia, _r3, 0, 1, 0, 0, 3);
-THUMB_PUSHPOP(stmia, _r4, 0, 1, 0, 0, 4);
-THUMB_PUSHPOP(stmia, _r5, 0, 1, 0, 0, 5);
-THUMB_PUSHPOP(stmia, _r6, 0, 1, 0, 0, 6);
-THUMB_PUSHPOP(stmia, _r7, 0, 1, 0, 0, 7);
-THUMB_PUSHPOP(ldmia, _r0, 0, 1, 1, 0, 0);
-THUMB_PUSHPOP(ldmia, _r1, 0, 1, 1, 0, 1);
-THUMB_PUSHPOP(ldmia, _r2, 0, 1, 1, 0, 2);
-THUMB_PUSHPOP(ldmia, _r3, 0, 1, 1, 0, 3);
-THUMB_PUSHPOP(ldmia, _r4, 0, 1, 1, 0, 4);
-THUMB_PUSHPOP(ldmia, _r5, 0, 1, 1, 0, 5);
-THUMB_PUSHPOP(ldmia, _r6, 0, 1, 1, 0, 6);
-THUMB_PUSHPOP(ldmia, _r7, 0, 1, 1, 0, 7);
+THUMB_PUSHPOP(push,    , 1, 0, 0, 0, CPU_REG_SP);
+THUMB_PUSHPOP(pop ,    , 0, 1, 1, 0, CPU_REG_SP);
+THUMB_PUSHPOP(push, _lr, 1, 0, 0, 1, CPU_REG_SP);
+THUMB_PUSHPOP(pop , _pc, 0, 1, 1, 1, CPU_REG_SP);
+THUMB_PUSHPOP(stm, _r0, 0, 1, 0, 0, 0);
+THUMB_PUSHPOP(stm, _r1, 0, 1, 0, 0, 1);
+THUMB_PUSHPOP(stm, _r2, 0, 1, 0, 0, 2);
+THUMB_PUSHPOP(stm, _r3, 0, 1, 0, 0, 3);
+THUMB_PUSHPOP(stm, _r4, 0, 1, 0, 0, 4);
+THUMB_PUSHPOP(stm, _r5, 0, 1, 0, 0, 5);
+THUMB_PUSHPOP(stm, _r6, 0, 1, 0, 0, 6);
+THUMB_PUSHPOP(stm, _r7, 0, 1, 0, 0, 7);
+THUMB_PUSHPOP(ldm, _r0, 0, 1, 1, 0, 0);
+THUMB_PUSHPOP(ldm, _r1, 0, 1, 1, 0, 1);
+THUMB_PUSHPOP(ldm, _r2, 0, 1, 1, 0, 2);
+THUMB_PUSHPOP(ldm, _r3, 0, 1, 1, 0, 3);
+THUMB_PUSHPOP(ldm, _r4, 0, 1, 1, 0, 4);
+THUMB_PUSHPOP(ldm, _r5, 0, 1, 1, 0, 5);
+THUMB_PUSHPOP(ldm, _r6, 0, 1, 1, 0, 6);
+THUMB_PUSHPOP(ldm, _r7, 0, 1, 1, 0, 7);
 
 static const cpu_instr_t thumb_bkpt =
 {
@@ -853,7 +958,7 @@ static void exec_##n(cpu_t *cpu) \
 	if (cond) \
 	{ \
 		int8_t nn = cpu->instr_opcode & 0xFF; \
-		cpu_inc_pc(cpu, (int)nn * 2 + 4); \
+		cpu_inc_pc(cpu, (int32_t)nn * 2 + 4); \
 		cpu->instr_delay += 2; \
 	} \
 	else \
@@ -908,7 +1013,7 @@ static void print_b(cpu_t *cpu, char *data, size_t size)
 {
 	int32_t nn = cpu->instr_opcode & 0x7FF;
 	if (nn & 0x400)
-		nn = -(nn& 0x3FF) - 1;
+		nn = -(~nn & 0x3FF) - 1;
 	nn *= 2;
 	snprintf(data, size, "b #%s0x%x", nn < 0 ? "-" : "", nn < 0 ? -nn : nn);
 }
@@ -948,8 +1053,10 @@ static const cpu_instr_t thumb_blx_off =
 
 static void exec_bl_setup(cpu_t *cpu)
 {
-	uint32_t nn = cpu->instr_opcode & 0x7FF;
-	cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 4 + (nn << 12));
+	int32_t nn = cpu->instr_opcode & 0x7FF;
+	if (nn & 0x400)
+		nn = -(~nn & 0x3FF) - 1;
+	cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 4 + (nn * (1 << 12)));
 	cpu_inc_pc(cpu, 2);
 	cpu->instr_delay = 1;
 }
@@ -973,7 +1080,6 @@ static void exec_bl_off(cpu_t *cpu)
 	uint32_t pc = cpu_get_reg(cpu, CPU_REG_PC);
 	uint32_t lr = (pc + 2) | 1;
 	int32_t dst = (cpu_get_reg(cpu, CPU_REG_LR) & ~1) + (nn << 1);
-	dst &= 0x7FFFFF;
 	cpu_set_reg(cpu, CPU_REG_PC, dst);
 	cpu_set_reg(cpu, CPU_REG_LR, lr);
 	cpu->instr_delay = 3;
@@ -1130,22 +1236,22 @@ const cpu_instr_t *cpu_instr_thumb[0x400] =
 	/* 0x2F4 */ REPEAT4(pop_pc),
 	/* 0x2F8 */ REPEAT4(bkpt),
 	/* 0x2FC */ REPEAT4(undef),
-	/* 0x300 */ REPEAT4(stmia_r0),
-	/* 0x304 */ REPEAT4(stmia_r1),
-	/* 0x308 */ REPEAT4(stmia_r2),
-	/* 0x30C */ REPEAT4(stmia_r3),
-	/* 0x310 */ REPEAT4(stmia_r4),
-	/* 0x314 */ REPEAT4(stmia_r5),
-	/* 0x318 */ REPEAT4(stmia_r6),
-	/* 0x31C */ REPEAT4(stmia_r7),
-	/* 0x320 */ REPEAT4(ldmia_r0),
-	/* 0x324 */ REPEAT4(ldmia_r1),
-	/* 0x328 */ REPEAT4(ldmia_r2),
-	/* 0x32C */ REPEAT4(ldmia_r3),
-	/* 0x330 */ REPEAT4(ldmia_r4),
-	/* 0x334 */ REPEAT4(ldmia_r5),
-	/* 0x338 */ REPEAT4(ldmia_r6),
-	/* 0x33C */ REPEAT4(ldmia_r7),
+	/* 0x300 */ REPEAT4(stm_r0),
+	/* 0x304 */ REPEAT4(stm_r1),
+	/* 0x308 */ REPEAT4(stm_r2),
+	/* 0x30C */ REPEAT4(stm_r3),
+	/* 0x310 */ REPEAT4(stm_r4),
+	/* 0x314 */ REPEAT4(stm_r5),
+	/* 0x318 */ REPEAT4(stm_r6),
+	/* 0x31C */ REPEAT4(stm_r7),
+	/* 0x320 */ REPEAT4(ldm_r0),
+	/* 0x324 */ REPEAT4(ldm_r1),
+	/* 0x328 */ REPEAT4(ldm_r2),
+	/* 0x32C */ REPEAT4(ldm_r3),
+	/* 0x330 */ REPEAT4(ldm_r4),
+	/* 0x334 */ REPEAT4(ldm_r5),
+	/* 0x338 */ REPEAT4(ldm_r6),
+	/* 0x33C */ REPEAT4(ldm_r7),
 	/* 0x340 */ REPEAT4(beq),
 	/* 0x344 */ REPEAT4(bne),
 	/* 0x348 */ REPEAT4(bcs),

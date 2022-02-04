@@ -38,7 +38,7 @@ void *mbc_ptr(mbc_t *mbc, uint32_t addr)
 		case 0xC:
 		case 0xD: //rom2
 		{
-			uint32_t a = addr  - 0x8000000;
+			uint32_t a = addr & 0x1FFFFF;
 			if (a < mbc->size)
 				return &mbc->data[a];
 			break;

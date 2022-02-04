@@ -60,17 +60,30 @@ void *mem_ptr(mem_t *mem, uint32_t addr)
 				return &mem->io_regs[addr - 0x4000000];
 			break;
 		case 0x5: //palette
-			if (addr < 0x5000400)
-				return &mem->palette[addr - 0x5000000];
-			break;
+		{
+			uint32_t a = addr & 0x3FF;
+			return &mem->palette[a];
+		}
 		case 0x6: //vram
-			if (addr < 0x6018000)
-				return &mem->vram[addr - 0x6000000];
+		{
+			if ((mem_get_reg(mem, MEM_REG_DISPCNT) & 0x7) < 0x3)
+			{
+				uint32_t a = addr & 0x7FFF;
+				return &mem->vram[a];
+			}
+			else
+			{
+				uint32_t a = addr & 0x1FFFF;
+				if (a < 0x18000)
+					return &mem->vram[a];
+			}
 			break;
+		}
 		case 0x7: //oam
-			if (addr < 0x7000400)
-				return &mem->oam[addr - 0x7000000];
-			break;
+		{
+			uint32_t a = addr & 0x3FF;
+			return &mem->oam[a];
+		}
 		case 0x8:
 		case 0x9:
 		case 0xA:

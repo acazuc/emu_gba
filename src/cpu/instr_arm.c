@@ -320,7 +320,7 @@ static const cpu_instr_t arm_##op##_##rot##r = \
 
 #define ARM_ALU_LLI(ctest) uint32_t op2 = ARM_LSL(op2s, shift); if (ctest && shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (32 - shift))); }
 #define ARM_ALU_LLR(ctest) uint32_t op2 = ARM_LSL(op2s, shift); if (ctest && shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (32 - shift))); }
-#define ARM_ALU_LRI(ctest) uint32_t op2 = ARM_LSR(op2s, shift ? shift : 32); if (ctest) { CPU_SET_FLAG_C(cpu, (shift == 0) ? (op2s & 0x80000000) : (op2s & (1 << (shift - 1)))); }
+#define ARM_ALU_LRI(ctest) uint32_t op2 = ARM_LSR(op2s, shift ? shift : 32); if (ctest) { CPU_SET_FLAG_C(cpu, shift ? (op2s & (1 << (shift - 1))) : (op2s & 0x80000000)); }
 #define ARM_ALU_LRR(ctest) uint32_t op2 = ARM_LSR(op2s, shift); if (ctest && shift) { CPU_SET_FLAG_C(cpu, op2s & (1 << (shift - 1))); }
 #define ARM_ALU_ARI(ctest) \
 	uint32_t op2; \
@@ -685,9 +685,7 @@ static void exec_##opname##_##oparg(cpu_t *cpu) \
 		if (op == 1) \
 		{ \
 			uint32_t v = mem_get16(cpu->mem, rn & ~1); \
-			if (rn & 1) \
-				v = (v >> 8) | (v << 24); \
-			cpu_set_reg(cpu, rdr, v); \
+			cpu_set_reg(cpu, rdr, ARM_ROR(v, (rn & 1) * 8)); \
 		} \
 		else if (op == 2) \
 		{ \
@@ -929,6 +927,11 @@ static void exec_##opname####oparg(cpu_t *cpu) \
 			if (st_ld) \
 			{ \
 				uint32_t v = mem_get32(cpu->mem, rn); \
+				if (i == CPU_REG_PC) \
+				{ \
+					pc_inc = false; \
+					v &= ~3; \
+				} \
 				if (usermode) \
 				{ \
 					if (i == rnr && CPU_GET_MODE(cpu) == CPU_MODE_USR) \
@@ -941,8 +944,6 @@ static void exec_##opname####oparg(cpu_t *cpu) \
 						nowriteback = true; \
 					cpu_set_reg(cpu, i, v); \
 				} \
-				if (i == CPU_REG_PC) \
-					pc_inc = false; \
 			} \
 			else \
 			{ \

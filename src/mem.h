@@ -3,6 +3,8 @@
 
 #include <stdint.h>
 
+#define MEM_REG_DISPCNT 0x0000
+
 typedef struct mbc_s mbc_t;
 
 typedef struct mem_s
@@ -26,5 +28,15 @@ uint32_t mem_get32(mem_t *mem, uint32_t addr);
 void mem_set8 (mem_t *mem, uint32_t addr, uint8_t val);
 void mem_set16(mem_t *mem, uint32_t addr, uint16_t val);
 void mem_set32(mem_t *mem, uint32_t addr, uint32_t val);
+
+static inline uint32_t mem_get_reg(mem_t *mem, uint32_t reg)
+{
+	return *(uint32_t*)&mem->io_regs[reg];
+}
+
+static inline void mem_set_reg(mem_t *mem, uint32_t reg, uint32_t v)
+{
+	*(uint32_t*)&mem->io_regs[reg] = v;
+}
 
 #endif
