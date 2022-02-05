@@ -4,6 +4,7 @@
 #include "cpu/instr_thumb.h"
 #include "cpu/instr_arm.h"
 #include <stdlib.h>
+#include <assert.h>
 #include <stdio.h>
 
 #define CPU_DEBUG_BASE    (1 << 0) /* print instr name */
@@ -19,7 +20,7 @@ cpu_t *cpu_new(mem_t *mem)
 		return NULL;
 
 	cpu->mem = mem;
-	cpu->regs.cpsr = CPU_MODE_SYS;
+	cpu->regs.cpsr = 0xD3;
 	cpu_update_mode(cpu);
 	return cpu;
 }
@@ -54,7 +55,7 @@ static bool check_arm_cond(cpu_t *cpu, uint32_t cond)
 		case 0x8:
 			return CPU_GET_FLAG_C(cpu) && !CPU_GET_FLAG_Z(cpu);
 		case 0x9:
-			return !CPU_GET_FLAG_C(cpu) && CPU_GET_FLAG_Z(cpu);
+			return !CPU_GET_FLAG_C(cpu) || CPU_GET_FLAG_Z(cpu);
 		case 0xA:
 			return CPU_GET_FLAG_N(cpu) == CPU_GET_FLAG_V(cpu);
 		case 0xB:
@@ -75,39 +76,82 @@ static bool check_arm_cond(cpu_t *cpu, uint32_t cond)
 static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 {
 	char tmp[1024];
-	char regs[1024];
-	char *rtmp;
 
 	if ((cpu->debug & CPU_DEBUG_INSTR) && instr->print)
 		instr->print(cpu, tmp, sizeof(tmp));
 	else
 		snprintf(tmp, sizeof(tmp), "%s", instr->name);
 
-	printf("[%-4s] [%08x] [%08x] [%08x] %s%s",
+	printf("[%-4s] [%08x] [%08x] [%08x] %s\n",
 	        msg,
 	        cpu->regs.cpsr,
 	        *cpu->regs.spsr,
 	        cpu->instr_opcode,
-	        tmp,
-	        "\n");
+	        tmp
+	        );
 
 	if (cpu->debug & CPU_DEBUG_REGS)
 	{
-		rtmp = regs;
-		for (unsigned i = 0; i < 16; ++i)
-		{
-			printf("r%02u=%08x", i, cpu_get_reg(cpu, i));
-			rtmp += 12;
-			if (i == 15)
-				break;
-			printf("%c", ((cpu->debug & CPU_DEBUG_REGS_ML) && i % 4 == 3) ? '\n' : ' ');
-			rtmp++;
-		}
-		printf("\n\n");
+		printf("r00=%08x r01=%08x r02=%08x r03=%08x r04=%08x r05=%08x r06=%08x r07=%08x r08=%08x r09=%08x r10=%08x r11=%08x r12=%08x r13=%08x r14=%08x r15=%08x\n",
+		       cpu_get_reg(cpu, 0x0),
+		       cpu_get_reg(cpu, 0x1),
+		       cpu_get_reg(cpu, 0x2),
+		       cpu_get_reg(cpu, 0x3),
+		       cpu_get_reg(cpu, 0x4),
+		       cpu_get_reg(cpu, 0x5),
+		       cpu_get_reg(cpu, 0x6),
+		       cpu_get_reg(cpu, 0x7),
+		       cpu_get_reg(cpu, 0x8),
+		       cpu_get_reg(cpu, 0x9),
+		       cpu_get_reg(cpu, 0xA),
+		       cpu_get_reg(cpu, 0xB),
+		       cpu_get_reg(cpu, 0xC),
+		       cpu_get_reg(cpu, 0xD),
+		       cpu_get_reg(cpu, 0xE),
+		       cpu_get_reg(cpu, 0xF) + (CPU_GET_FLAG_T(cpu) ? 4 : 8));
 	}
 }
 
-static bool next_instruction(cpu_t *cpu)
+static bool handle_interrupt(cpu_t *cpu)
+{
+	if (CPU_GET_FLAG_I(cpu))
+		return false;
+	uint16_t reg_if = mem_get_reg16(cpu->mem, MEM_REG_IF);
+	if (!reg_if)
+		return false;
+	uint16_t reg_ie = mem_get_reg16(cpu->mem, MEM_REG_IE);
+	uint16_t ints = reg_ie & reg_if;
+	if (!ints)
+		return false;
+	cpu->state = CPU_STATE_RUN;
+	uint16_t ime = mem_get_reg16(cpu->mem, MEM_REG_IME);
+	if (!ime)
+		return false;
+	for (uint8_t i = 0; i < 16; ++i)
+	{
+		if (!(ints & (1 << i)))
+			continue;
+		cpu->regs.spsr_modes[4] = cpu->regs.cpsr;
+		CPU_SET_MODE(cpu, CPU_MODE_IRQ);
+		CPU_SET_FLAG_I(cpu, 1);
+		cpu_update_mode(cpu);
+		if (CPU_GET_FLAG_T(cpu))
+		{
+			CPU_SET_FLAG_T(cpu, 0);
+			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC));
+		}
+		else
+		{
+			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) - 4);
+		}
+		cpu_set_reg(cpu, CPU_REG_PC, 0x18);
+		mem_set_reg16(cpu->mem, MEM_REG_IF, reg_if & ~(1 << i));
+		return true;
+	}
+	return false;
+}
+
+static bool decode_instruction(cpu_t *cpu)
 {
 	if (CPU_GET_FLAG_T(cpu))
 	{
@@ -149,7 +193,15 @@ void cpu_cycle(cpu_t *cpu)
 
 	if (!cpu->instr)
 	{
-		if (!next_instruction(cpu))
+		if (!decode_instruction(cpu))
+			return;
+	}
+
+	if (cpu->state != CPU_STATE_RUN)
+	{
+		if (!handle_interrupt(cpu))
+			return;
+		if (!decode_instruction(cpu))
 			return;
 	}
 
@@ -166,8 +218,8 @@ void cpu_cycle(cpu_t *cpu)
 		cpu->regs.r[15] += CPU_GET_FLAG_T(cpu) ? 2 : 4;
 	}
 
-	if (!next_instruction(cpu))
-		return;
+	(void)handle_interrupt(cpu);
+	(void)decode_instruction(cpu);
 }
 
 void cpu_update_mode(cpu_t *cpu)
@@ -205,5 +257,8 @@ void cpu_update_mode(cpu_t *cpu)
 				cpu->regs.rptr[i] = &cpu->regs.r_und[i - 13];
 			cpu->regs.spsr = &cpu->regs.spsr_modes[5];
 			break;
+		default:
+			printf("unknown mode: %x\n", CPU_GET_MODE(cpu));
+			assert(!"invalid mode");
 	}
 }

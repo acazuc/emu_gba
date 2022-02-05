@@ -43,15 +43,16 @@ do \
 #define CPU_SET_FLAG_F(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_F, v)
 #define CPU_SET_FLAG_T(cpu, v) CPU_SET_FLAG(cpu, CPU_FLAG_T, v)
 
-#define CPU_GET_MODE(cpu) ((cpu)->regs.cpsr & 0xF)
+#define CPU_GET_MODE(cpu) ((cpu)->regs.cpsr & 0x1F)
+#define CPU_SET_MODE(cpu, mode) (cpu)->regs.cpsr = ((cpu)->regs.cpsr & 0xFFFFFFE0) | (mode)
 
-#define CPU_MODE_USR 0x0
-#define CPU_MODE_FIQ 0x1
-#define CPU_MODE_IRQ 0x2
-#define CPU_MODE_SVC 0x3
-#define CPU_MODE_ABT 0x7
-#define CPU_MODE_UND 0xB
-#define CPU_MODE_SYS 0xF
+#define CPU_MODE_USR 0x10
+#define CPU_MODE_FIQ 0x11
+#define CPU_MODE_IRQ 0x12
+#define CPU_MODE_SVC 0x13
+#define CPU_MODE_ABT 0x17
+#define CPU_MODE_UND 0x1B
+#define CPU_MODE_SYS 0x1F
 
 #define CPU_REG_SP 0xD
 #define CPU_REG_LR 0xE
@@ -71,6 +72,13 @@ typedef struct cpu_regs_s
 	uint32_t *spsr;
 } cpu_regs_t;
 
+enum cpu_state
+{
+	CPU_STATE_RUN,
+	CPU_STATE_HALT,
+	CPU_STATE_STOP,
+};
+
 typedef struct cpu_s
 {
 	cpu_regs_t regs;
@@ -79,6 +87,7 @@ typedef struct cpu_s
 	uint32_t instr_opcode;
 	uint32_t instr_delay;
 	uint8_t debug;
+	enum cpu_state state;
 } cpu_t;
 
 cpu_t *cpu_new(mem_t *mem);

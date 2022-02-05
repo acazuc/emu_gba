@@ -16,11 +16,16 @@ static void exec_alu_flags_logical(cpu_t *cpu, uint32_t v)
 	CPU_SET_FLAG_Z(cpu, !v);
 }
 
-static void exec_alu_flags_arithmetical(cpu_t *cpu, uint32_t v, uint32_t op1)
+static void exec_alu_flags_add(cpu_t *cpu, uint32_t v, uint32_t op1, uint32_t op2)
 {
-	CPU_SET_FLAG_V(cpu, (v ^ op1) & 0x80000000);
-	CPU_SET_FLAG_N(cpu, v & 0x80000000);
-	CPU_SET_FLAG_Z(cpu, !v);
+	CPU_SET_FLAG_V(cpu, (~(op1 ^ op2) & (v ^ op2)) & 0x80000000);
+	exec_alu_flags_logical(cpu, v);
+}
+
+static void exec_alu_flags_sub(cpu_t *cpu, uint32_t v, uint32_t op1, uint32_t op2)
+{
+	CPU_SET_FLAG_V(cpu, ((op1 ^ op2) & (v ^ op1)) & 0x80000000);
+	exec_alu_flags_logical(cpu, v);
 }
 
 static void exec_alu_and(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
@@ -60,7 +65,7 @@ static void exec_alu_subs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 	{
-		exec_alu_flags_arithmetical(cpu, v, op1);
+		exec_alu_flags_sub(cpu, v, op1, op2);
 		CPU_SET_FLAG_C(cpu, op2 <= op1);
 	}
 }
@@ -76,7 +81,7 @@ static void exec_alu_rsbs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 	{
-		exec_alu_flags_arithmetical(cpu, v, op2);
+		exec_alu_flags_sub(cpu, v, op2, op1);
 		CPU_SET_FLAG_C(cpu, op1 <= op2);
 	}
 }
@@ -92,7 +97,7 @@ static void exec_alu_adds(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 	{
-		exec_alu_flags_arithmetical(cpu, v, op1);
+		exec_alu_flags_add(cpu, v, op1, op2);
 		CPU_SET_FLAG_C(cpu, v < op1);
 	}
 }
@@ -109,7 +114,7 @@ static void exec_alu_adcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 	{
-		exec_alu_flags_arithmetical(cpu, v, op1);
+		exec_alu_flags_add(cpu, v, op1, op2 + c);
 		CPU_SET_FLAG_C(cpu, c ? v <= op1 : v < op1);
 	}
 }
@@ -122,11 +127,12 @@ static void exec_alu_sbc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 static void exec_alu_sbcs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
 	uint32_t c = CPU_GET_FLAG_C(cpu);
-	uint32_t v = op1 - (op2 + 1 - c);
+	uint32_t v2 = op2 + 1 - c;
+	uint32_t v = op1 - v2;
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 	{
-		exec_alu_flags_arithmetical(cpu, v, op1);
+		exec_alu_flags_sub(cpu, v, op1, v2);
 		CPU_SET_FLAG_C(cpu, c ? op2 <= op1 : v < op1);
 	}
 }
@@ -139,11 +145,12 @@ static void exec_alu_rsc(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 static void exec_alu_rscs(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 {
 	uint32_t c = CPU_GET_FLAG_C(cpu);
-	uint32_t v = op2 - (op1 + 1 - c);
+	uint32_t v1 = op1 + 1 - c;
+	uint32_t v = op2 - v1;
 	cpu_set_reg(cpu, rd, v);
 	if (rd != CPU_REG_PC)
 	{
-		exec_alu_flags_arithmetical(cpu, v, op2);
+		exec_alu_flags_sub(cpu, v, op2, v1);
 		CPU_SET_FLAG_C(cpu, c ? op1 <= op2 : v < op2);
 	}
 }
@@ -167,7 +174,7 @@ static void exec_alu_cmps(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = op1 - op2;
 	if (rd != CPU_REG_PC)
 	{
-		exec_alu_flags_arithmetical(cpu, v, op2);
+		exec_alu_flags_sub(cpu, v, op1, op2);
 		CPU_SET_FLAG_C(cpu, op2 <= op1);
 	}
 }
@@ -177,7 +184,7 @@ static void exec_alu_cmns(cpu_t *cpu, uint32_t rd, uint32_t op1, uint32_t op2)
 	uint32_t v = op1 + op2;
 	if (rd != CPU_REG_PC)
 	{
-		exec_alu_flags_arithmetical(cpu, v, op2);
+		exec_alu_flags_add(cpu, v, op1, op2);
 		CPU_SET_FLAG_C(cpu, v < op1);
 	}
 }
@@ -377,7 +384,7 @@ static void exec_##op##_imm(cpu_t *cpu) \
 	op1 += (op1r == CPU_REG_PC) ? 8 : 0; \
 	uint32_t op2s = (cpu->instr_opcode >> 0) & 0xFF; \
 	uint32_t op2 = ARM_ROR(op2s, shift * 2); \
-	if (ctest) \
+	if (ctest && shift) \
 		CPU_SET_FLAG_C(cpu, op2s & (1 << ((shift * 2) - 1))); \
 	if (sflag && rd == CPU_REG_PC) \
 	{ \
@@ -574,7 +581,7 @@ static void exec_##opname##_##oparg####rotname(cpu_t *cpu) \
 	{ \
 		uint8_t shift = (cpu->instr_opcode >> 7) & 0x1F; \
 		(void)shift; \
-		uint8_t rm = cpu->instr_opcode & 0xF; \
+		uint32_t rm = cpu_get_reg(cpu, cpu->instr_opcode & 0xF); \
 		regshift; \
 	} \
 	else \
@@ -992,7 +999,7 @@ static void exec_##opname####oparg(cpu_t *cpu) \
 			rn += 0x4; \
 		if (st_ld) \
 		{ \
-			cpu_set_reg(cpu, CPU_REG_PC, mem_get32(cpu->mem, rn)); \
+			cpu_set_reg(cpu, CPU_REG_PC, mem_get32(cpu->mem, rn) & ~3); \
 			pc_inc = false; \
 		} \
 		else \
