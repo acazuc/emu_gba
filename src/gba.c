@@ -62,7 +62,7 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFC) | 0x0);
 		mem_set_reg16(gba->mem, MEM_REG_VCOUNT, y);
 
-		if (y == ((mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) >> 8) & 0xFF))
+		if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 5) && y == ((mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) >> 8) & 0xFF))
 			mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 2));
 
 		/* draw */

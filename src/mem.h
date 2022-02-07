@@ -59,6 +59,23 @@
 #define MEM_REG_FIFO_A      0x0A0
 #define MEM_REG_FIFO_B      0x0A4
 
+#define MEM_REG_DMA0SAD     0x0B0
+#define MEM_REG_DMA0DAD     0x0B4
+#define MEM_REG_DMA0CNT_L   0x0B8
+#define MEM_REG_DMA0CNT_H   0x0BA
+#define MEM_REG_DMA1SAD     0x0BC
+#define MEM_REG_DMA1DAD     0x0C0
+#define MEM_REG_DMA1CNT_L   0x0C4
+#define MEM_REG_DMA1CNT_H   0x0C6
+#define MEM_REG_DMA2SAD     0x0C8
+#define MEM_REG_DMA2DAD     0x0CC
+#define MEM_REG_DMA2CNT_L   0x0D0
+#define MEM_REG_DMA2CNT_H   0x0D2
+#define MEM_REG_DMA3SAD     0x0D4
+#define MEM_REG_DMA3DAD     0x0D8
+#define MEM_REG_DMA3CNT_L   0x0DC
+#define MEM_REG_DMA3CNT_H   0x0DE
+
 #define MEM_REG_IE          0x200
 #define MEM_REG_IF          0x202
 #define MEM_REG_WAITCNT     0x204
@@ -114,7 +131,7 @@ static inline void mem_set_reg16(mem_t *mem, uint32_t reg, uint16_t v)
 
 static inline uint16_t mem_get_oam16(mem_t *mem, uint32_t addr)
 {
-	return mem->oam[addr];
+	return *(uint16_t*)&mem->oam[addr];
 }
 
 #endif

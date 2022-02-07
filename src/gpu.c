@@ -53,10 +53,11 @@ static void draw_objects(gpu_t *gpu, uint8_t y)
 	};
 	for (uint8_t x = 0; x < 160; ++x)
 	{
-		//printf("========== X: %u, Y: %u ===========\n", x, y);
 		for (uint8_t i = 0; i < 128; ++i)
 		{
 			uint16_t attr0 = mem_get_oam16(gpu->mem, i * 8);
+			if ((attr0 & 0x300) == 0x200) //disable flag
+				continue;
 			uint8_t objy = attr0 & 0xFF;
 			if (objy > y)
 				continue;
@@ -87,7 +88,6 @@ static void draw_objects(gpu_t *gpu, uint8_t y)
 			 || objy + height <= y)
 				continue;
 			uint16_t attr2 = mem_get_oam16(gpu->mem, i * 8 + 3);
-			//printf("oam %x: {attr0: %04x, attr1: %04x, attr2: %04x, x: %u, y: %u, width: %u, height: %u}\n", i, attr0, attr1, attr2, objx, objy, width, height);
 			memset(&gpu->data[(240 * y + x) * 4], 0xC0 | (attr2 & 0x3F), 4);
 		}
 	}
@@ -120,6 +120,7 @@ static void draw_mode2(gpu_t *gpu, uint8_t y)
 void gpu_draw(gpu_t *gpu, uint8_t y)
 {
 	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
+	printf("display: %08x\n", display);
 	switch (display & 0x7)
 	{
 		case 0:
@@ -132,13 +133,13 @@ void gpu_draw(gpu_t *gpu, uint8_t y)
 			draw_mode2(gpu, y);
 			return;
 		case 3:
-			printf("unsupported mode 1\n");
+			printf("unsupported mode 3\n");
 			break;
 		case 4:
-			printf("unsupported mode 1\n");
+			printf("unsupported mode 4\n");
 			break;
 		case 5:
-			printf("unsupported mode 1\n");
+			printf("unsupported mode 5\n");
 			break;
 		default:
 			printf("invalid mode: %x\n", display & 0x7);

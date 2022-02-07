@@ -976,7 +976,7 @@ static void exec_##n(cpu_t *cpu) \
 static void print_##n(cpu_t *cpu, char *data, size_t size) \
 { \
 	uint32_t nn = cpu->instr_opcode & 0xFF; \
-	snprintf(data, size, #n " #0x%x", nn); \
+	snprintf(data, size, #n " #0x%x", nn * 2); \
 } \
 static const cpu_instr_t thumb_##n = \
 { \

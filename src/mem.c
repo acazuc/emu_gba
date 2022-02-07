@@ -135,13 +135,17 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 		case 0x4: /* registers */ \
 		{ \
 			uint32_t a = addr & 0x3FF; \
-			if (a == MEM_REG_HALTCNT) \
+			switch (a) \
 			{ \
-				if (v & 1) \
-					mem->gba->cpu->state = CPU_STATE_STOP; \
-				else \
-					mem->gba->cpu->state = CPU_STATE_HALT; \
-				return; \
+				case MEM_REG_HALTCNT: \
+					if (v & 0x80) \
+						mem->gba->cpu->state = CPU_STATE_STOP; \
+					else \
+						mem->gba->cpu->state = CPU_STATE_HALT; \
+					return; \
+				case MEM_REG_IF: \
+					*(uint##size##_t*)&mem->io_regs[a] &= ~v; \
+					return; \
 			} \
 			*(uint##size##_t*)&mem->io_regs[a] = v; \
 			return; \
