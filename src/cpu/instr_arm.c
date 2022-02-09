@@ -759,17 +759,17 @@ static void print_##opname##_##oparg(cpu_t *cpu, char *data, size_t size) \
 	{ \
 		uint32_t offset = ((cpu->instr_opcode & 0xF00) >> 4) | (cpu->instr_opcode & 0xF); \
 		if (post_pre) \
-			snprintf(data, size, #opname " r%d, [r%d, #0x%x]!", rd, rn, offset); \
+			snprintf(data, size, #opname " r%d, [r%d, #%s0x%x]%s", rd, rn, dec_inc ? "" : "-", offset, writeback ? "!" : ""); \
 		else \
-			snprintf(data, size, #opname " r%d, [r%d], #0x%x", rd, rn, offset); \
+			snprintf(data, size, #opname " r%d, [r%d], #%s0x%x", rd, rn, dec_inc ? "" : "-", offset); \
 	} \
 	else \
 	{ \
 		uint32_t offset = cpu->instr_opcode & 0xF; \
 		if (post_pre) \
-			snprintf(data, size, #opname " r%d, [r%d, r%d]!", rd, rn, offset); \
+			snprintf(data, size, #opname " r%d, [r%d, %sr%d]%s", rd, rn, dec_inc ? "" : "-", offset, writeback ? "!" : ""); \
 		else \
-			snprintf(data, size, #opname " r%d, [r%d], r%d", rd, rn, offset); \
+			snprintf(data, size, #opname " r%d, [r%d], %sr%d", rd, rn, dec_inc ? "" : "-", offset); \
 	} \
 } \
 static const cpu_instr_t arm_##opname##_##oparg = \
@@ -1360,9 +1360,27 @@ static const cpu_instr_t arm_mrc =
 	.name = "mrc",
 };
 
+static void exec_swi(cpu_t *cpu)
+{
+	cpu->regs.spsr_modes[2] = cpu->regs.cpsr;
+	CPU_SET_MODE(cpu, CPU_MODE_SVC);
+	cpu_update_mode(cpu);
+	CPU_SET_FLAG_I(cpu, 1);
+	cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 4);
+	cpu_set_reg(cpu, CPU_REG_PC, 0x8);
+}
+
+static void print_swi(cpu_t *cpu, char *data, size_t size)
+{
+	uint32_t nn = cpu->instr_opcode & 0xFFFFFF;
+	snprintf(data, size, "swi 0x%x", nn);
+}
+
 static const cpu_instr_t arm_swi =
 {
 	.name = "swi",
+	.exec = exec_swi,
+	.print = print_swi,
 };
 
 static const cpu_instr_t arm_undef =

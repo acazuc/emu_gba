@@ -994,15 +994,34 @@ THUMB_BRANCH(bpl, !CPU_GET_FLAG_N(cpu));
 THUMB_BRANCH(bvs, CPU_GET_FLAG_V(cpu));
 THUMB_BRANCH(bvc, !CPU_GET_FLAG_V(cpu));
 THUMB_BRANCH(bhi, CPU_GET_FLAG_C(cpu) && !CPU_GET_FLAG_Z(cpu));
-THUMB_BRANCH(bls, !CPU_GET_FLAG_C(cpu) && CPU_GET_FLAG_Z(cpu));
+THUMB_BRANCH(bls, !CPU_GET_FLAG_C(cpu) || CPU_GET_FLAG_Z(cpu));
 THUMB_BRANCH(bge, CPU_GET_FLAG_N(cpu) == CPU_GET_FLAG_V(cpu));
 THUMB_BRANCH(blt, CPU_GET_FLAG_N(cpu) != CPU_GET_FLAG_V(cpu));
 THUMB_BRANCH(bgt, !CPU_GET_FLAG_Z(cpu) && CPU_GET_FLAG_N(cpu) == CPU_GET_FLAG_V(cpu));
 THUMB_BRANCH(ble, CPU_GET_FLAG_Z(cpu) || CPU_GET_FLAG_N(cpu) != CPU_GET_FLAG_V(cpu));
 
+static void exec_swi(cpu_t *cpu)
+{
+	cpu->regs.spsr_modes[2] = cpu->regs.cpsr;
+	CPU_SET_MODE(cpu, CPU_MODE_SVC);
+	cpu_update_mode(cpu);
+	CPU_SET_FLAG_I(cpu, 1);
+	CPU_SET_FLAG_T(cpu, 0);
+	cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 2);
+	cpu_set_reg(cpu, CPU_REG_PC, 0x8);
+}
+
+static void print_swi(cpu_t *cpu, char *data, size_t size)
+{
+	uint32_t nn = cpu->instr_opcode & 0xFFFFFF;
+	snprintf(data, size, "swi 0x%x", nn);
+}
+
 static const cpu_instr_t thumb_swi =
 {
 	.name = "swi",
+	.exec = exec_swi,
+	.print = print_swi,
 };
 
 static void exec_b(cpu_t *cpu)

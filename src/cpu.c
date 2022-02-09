@@ -156,19 +156,18 @@ static bool handle_interrupt(cpu_t *cpu)
 			continue;
 		cpu->regs.spsr_modes[4] = cpu->regs.cpsr;
 		CPU_SET_MODE(cpu, CPU_MODE_IRQ);
-		CPU_SET_FLAG_I(cpu, 1);
 		cpu_update_mode(cpu);
+		CPU_SET_FLAG_I(cpu, 1);
 		if (CPU_GET_FLAG_T(cpu))
 		{
 			CPU_SET_FLAG_T(cpu, 0);
-			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 6);
+			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 2);
 		}
 		else
 		{
-			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 8);
+			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 4);
 		}
 		cpu_set_reg(cpu, CPU_REG_PC, 0x18);
-		mem_set_reg16(cpu->mem, MEM_REG_IF, reg_if & ~(1 << i));
 		return true;
 	}
 	return false;
@@ -200,7 +199,7 @@ static bool decode_instruction(cpu_t *cpu)
 
 void cpu_cycle(cpu_t *cpu)
 {
-	//if (cpu_get_reg(cpu, 15) == 0x85C)
+	//if (cpu_get_reg(cpu, 15) == 0x1A84)
 	//	cpu->debug = CPU_DEBUG_INSTR | CPU_DEBUG_REGS | CPU_DEBUG_REGS_ML;
 	//if (cpu_get_reg(cpu, 15) == 0x872)
 	//	cpu->debug = 0;

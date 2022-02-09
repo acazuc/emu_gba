@@ -96,7 +96,7 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 
 		/* hblank */
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFE) | 0x3);
-		if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 4))
+		if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 5) && mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 4))
 			mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 1));
 
 		for (size_t i = 0; i < 272; ++i)
