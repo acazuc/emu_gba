@@ -1,6 +1,7 @@
 #ifndef MEM_H
 #define MEM_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define MEM_REG_DISPCNT     0x000
@@ -86,10 +87,19 @@
 typedef struct mbc_s mbc_t;
 typedef struct gba_s gba_t;
 
+typedef struct mem_dma_s
+{
+	bool enabled;
+	uint32_t src;
+	uint32_t dst;
+	uint32_t len;
+} mem_dma_t;
+
 typedef struct mem_s
 {
 	gba_t *gba;
 	mbc_t *mbc;
+	mem_dma_t dma[4];
 	uint8_t bios[0x4000];
 	uint8_t board_wram[0x40000];
 	uint8_t chip_wram[0x8000];

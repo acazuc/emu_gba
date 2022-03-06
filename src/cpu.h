@@ -67,7 +67,7 @@ typedef struct cpu_regs_s
 	uint32_t r_irq[2];
 	uint32_t r_und[2];
 	uint32_t cpsr;
-	uint32_t spsr_modes[6];
+	uint32_t spsr_modes[5];
 	uint32_t *rptr[16];
 	uint32_t *spsr;
 } cpu_regs_t;

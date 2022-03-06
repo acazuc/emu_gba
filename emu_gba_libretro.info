@@ -20,4 +20,4 @@ supports_no_game = "false"
 # Firmware / BIOS
 firmware_count = 0
 
-description = "Simple Game Boy Advabce emulator"
+description = "Simple Game Boy Advance emulator"

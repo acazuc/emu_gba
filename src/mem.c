@@ -16,7 +16,7 @@ mem_t *mem_new(gba_t *gba, mbc_t *mbc)
 
 	if (&_binary_gbabios_bin_end - &_binary_gbabios_bin_start != 0x4000)
 	{
-		fprintf(stderr, "invalid dmgbios data: %u\n", (unsigned)(&_binary_gbabios_bin_end - &_binary_gbabios_bin_start));
+		fprintf(stderr, "invalid gbabios data: %u\n", (unsigned)(&_binary_gbabios_bin_end - &_binary_gbabios_bin_start));
 		return NULL;
 	}
 
@@ -35,6 +35,18 @@ void mem_del(mem_t *mem)
 	if (!mem)
 		return;
 	free(mem);
+}
+
+static void start_dma(mem_t *mem, uint8_t dma)
+{
+	static uint32_t len_masks[4] = {0x3FFF, 0x3FFF, 0x3FFF, 0xFFFF};
+	mem->dma[dma].src = mem_get_reg32(mem, MEM_REG_DMA0SAD + 0xC * dma);
+	mem->dma[dma].dst = mem_get_reg32(mem, MEM_REG_DMA0DAD + 0xC * dma);
+	mem->dma[dma].len = mem_get_reg32(mem, MEM_REG_DMA0CNT_L + 0xC * dma) & len_masks[dma];
+	uint32_t cnt_h = mem_get_reg32(mem, MEM_REG_DMA0CNT_H + 0xC * dma);
+	mem->dma[dma].enabled = cnt_h & (1 << 15);
+	if (mem->dma[dma].enabled)
+		printf("starting DMA of %x bytes from %x to %x\n", mem->dma[dma].len, mem->dma[dma].src, mem->dma[dma].dst);
 }
 
 #define MEM_GET(size) \
@@ -97,7 +109,7 @@ uint##size##_t mem_get##size(mem_t *mem, uint32_t addr) \
 			return mbc_get##size(mem->mbc, addr); \
 	} \
 end: \
-	printf("unknown addr: %08x\n", addr); \
+	printf("unknown get" #size " addr: %08x\n", addr); \
 	return 0; \
 }
 
@@ -146,6 +158,38 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 				case MEM_REG_IF: \
 					*(uint##size##_t*)&mem->io_regs[a] &= ~v; \
 					return; \
+				case MEM_REG_DMA0CNT_H: \
+					start_dma(mem, 0); \
+					return; \
+				case MEM_REG_DMA1CNT_H: \
+					start_dma(mem, 1); \
+					return; \
+				case MEM_REG_DMA2CNT_H: \
+					start_dma(mem, 2); \
+					return; \
+				case MEM_REG_DMA3CNT_H: \
+					start_dma(mem, 3); \
+					return; \
+				case MEM_REG_DMA0SAD: \
+				case MEM_REG_DMA0DAD: \
+				case MEM_REG_DMA0CNT_L: \
+				case MEM_REG_DMA1SAD: \
+				case MEM_REG_DMA1DAD: \
+				case MEM_REG_DMA1CNT_L: \
+				case MEM_REG_DMA2SAD: \
+				case MEM_REG_DMA2DAD: \
+				case MEM_REG_DMA2CNT_L: \
+				case MEM_REG_DMA3SAD: \
+				case MEM_REG_DMA3DAD: \
+				case MEM_REG_DMA3CNT_L: \
+				case MEM_REG_DISPCNT: \
+				case MEM_REG_BG3X: \
+				case MEM_REG_BG3Y: \
+				case MEM_REG_IME: \
+					break; \
+				default: \
+					/*printf("writing to unknown register [%04x] = %x\n", a, v);*/ \
+					break; \
 			} \
 			*(uint##size##_t*)&mem->io_regs[a] = v; \
 			return; \
@@ -182,7 +226,7 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 			return; \
 	} \
 end: \
-	printf("unknown addr: %08x\n", addr); \
+	printf("unknown set"#size" addr: %08x\n", addr); \
 }
 
 MEM_SET(8);

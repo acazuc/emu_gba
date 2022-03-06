@@ -434,6 +434,8 @@ ARM_ALU_OPS(mov, 1, 1);
 ARM_ALU_OPS(bic, 1, 1);
 ARM_ALU_OPS(mvn, 1, 1);
 
+#include <assert.h>
+
 #define MULOP(n, wmod, rs_lower_upper, rm_lower_upper, halfword, signed_unsigned, longword, accum, setcond) \
 static void exec_##n(cpu_t *cpu) \
 { \
@@ -444,6 +446,7 @@ static void exec_##n(cpu_t *cpu) \
 	if (halfword) \
 	{ \
 		/* XXX */ \
+		assert(!"mul half"); \
 	} \
 	else \
 	{ \
@@ -647,9 +650,9 @@ static void print_##opname##_##oparg####rotname(cpu_t *cpu, char *data, size_t s
 		uint8_t shift = (cpu->instr_opcode >> 7) & 0x1F; \
 		uint8_t rm = cpu->instr_opcode & 0xF; \
 		if (post_pre) \
-			snprintf(data, size, #opname " r%d, [r%d, %sr%d, " #rotstr " #0x%x]%s", rd, rn, dec_inc ? "" : "-", rm, shift, writeback_mm ? "!" : ""); \
+			snprintf(data, size, #opname " r%d, [r%d, %sr%d, " rotstr " #0x%x]%s", rd, rn, dec_inc ? "" : "-", rm, shift, writeback_mm ? "!" : ""); \
 		else \
-			snprintf(data, size, #opname " r%d, [r%d], %sr%d, " #rotstr " #0x%x", rd, rn, dec_inc ? "" : "-", rm, shift); \
+			snprintf(data, size, #opname " r%d, [r%d], %sr%d, " rotstr " #0x%x", rd, rn, dec_inc ? "" : "-", rm, shift); \
 	} \
 	else \
 	{ \
@@ -1149,17 +1152,24 @@ static void exec_msr_##n(cpu_t *cpu) \
 	uint32_t mask = 0; \
 	if (cpu->instr_opcode & (1 << 19)) \
 		mask |= 0xFF000000; \
-	if (cpu->instr_opcode & (1 << 18)) \
-		mask |= 0x00FF0000; \
-	if (cpu->instr_opcode & (1 << 17)) \
-		mask |= 0x0000FF00; \
-	if (cpu->instr_opcode & (1 << 16)) \
-		mask |= 0x000000FF; \
-	mask &= ~CPU_FLAG_T; \
+	if (CPU_GET_MODE(cpu) != CPU_MODE_USR) \
+	{ \
+		if (cpu->instr_opcode & (1 << 18)) \
+			mask |= 0x00FF0000; \
+		if (cpu->instr_opcode & (1 << 17)) \
+			mask |= 0x0000FF00; \
+		if (cpu->instr_opcode & (1 << 16)) \
+			mask |= 0x000000DF; \
+	} \
 	if (psr) \
-		*cpu->regs.spsr = (*cpu->regs.spsr & ~mask) | (v & mask); \
+	{ \
+		if (CPU_GET_MODE(cpu) != CPU_MODE_USR && CPU_GET_MODE(cpu) != CPU_MODE_SYS) \
+			*cpu->regs.spsr = (*cpu->regs.spsr & ~mask) | (v & mask); \
+	} \
 	else \
+	{ \
 		cpu->regs.cpsr = (cpu->regs.cpsr & ~mask) | (v & mask); \
+	} \
 	cpu_inc_pc(cpu, 4); \
 	cpu_update_mode(cpu); \
 	cpu->instr_delay = 1; \
@@ -1362,7 +1372,7 @@ static const cpu_instr_t arm_mrc =
 
 static void exec_swi(cpu_t *cpu)
 {
-	cpu->regs.spsr_modes[2] = cpu->regs.cpsr;
+	cpu->regs.spsr_modes[1] = cpu->regs.cpsr;
 	CPU_SET_MODE(cpu, CPU_MODE_SVC);
 	cpu_update_mode(cpu);
 	CPU_SET_FLAG_I(cpu, 1);
@@ -1372,7 +1382,8 @@ static void exec_swi(cpu_t *cpu)
 
 static void print_swi(cpu_t *cpu, char *data, size_t size)
 {
-	uint32_t nn = cpu->instr_opcode & 0xFFFFFF;
+	uint32_t nn = cpu->instr_opcode & 0xF;
+	nn |= (cpu->instr_opcode >> 4) & 0xFFF0;
 	snprintf(data, size, "swi 0x%x", nn);
 }
 

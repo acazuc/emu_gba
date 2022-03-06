@@ -330,6 +330,7 @@ static void alu_mul(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
 	uint32_t v = rd * rs;
 	cpu_set_reg(cpu, rdr, v);
 	update_flags_logical(cpu, v);
+	CPU_SET_FLAG_C(cpu, 0);
 }
 
 static void alu_bic(cpu_t *cpu, uint32_t rd, uint32_t rdr, uint32_t rs)
@@ -936,22 +937,22 @@ THUMB_PUSHPOP(push,    , 1, 0, 0, 0, CPU_REG_SP);
 THUMB_PUSHPOP(pop ,    , 0, 1, 1, 0, CPU_REG_SP);
 THUMB_PUSHPOP(push, _lr, 1, 0, 0, 1, CPU_REG_SP);
 THUMB_PUSHPOP(pop , _pc, 0, 1, 1, 1, CPU_REG_SP);
-THUMB_PUSHPOP(stm, _r0, 0, 1, 0, 0, 0);
-THUMB_PUSHPOP(stm, _r1, 0, 1, 0, 0, 1);
-THUMB_PUSHPOP(stm, _r2, 0, 1, 0, 0, 2);
-THUMB_PUSHPOP(stm, _r3, 0, 1, 0, 0, 3);
-THUMB_PUSHPOP(stm, _r4, 0, 1, 0, 0, 4);
-THUMB_PUSHPOP(stm, _r5, 0, 1, 0, 0, 5);
-THUMB_PUSHPOP(stm, _r6, 0, 1, 0, 0, 6);
-THUMB_PUSHPOP(stm, _r7, 0, 1, 0, 0, 7);
-THUMB_PUSHPOP(ldm, _r0, 0, 1, 1, 0, 0);
-THUMB_PUSHPOP(ldm, _r1, 0, 1, 1, 0, 1);
-THUMB_PUSHPOP(ldm, _r2, 0, 1, 1, 0, 2);
-THUMB_PUSHPOP(ldm, _r3, 0, 1, 1, 0, 3);
-THUMB_PUSHPOP(ldm, _r4, 0, 1, 1, 0, 4);
-THUMB_PUSHPOP(ldm, _r5, 0, 1, 1, 0, 5);
-THUMB_PUSHPOP(ldm, _r6, 0, 1, 1, 0, 6);
-THUMB_PUSHPOP(ldm, _r7, 0, 1, 1, 0, 7);
+THUMB_PUSHPOP(stm , _r0, 0, 1, 0, 0, 0);
+THUMB_PUSHPOP(stm , _r1, 0, 1, 0, 0, 1);
+THUMB_PUSHPOP(stm , _r2, 0, 1, 0, 0, 2);
+THUMB_PUSHPOP(stm , _r3, 0, 1, 0, 0, 3);
+THUMB_PUSHPOP(stm , _r4, 0, 1, 0, 0, 4);
+THUMB_PUSHPOP(stm , _r5, 0, 1, 0, 0, 5);
+THUMB_PUSHPOP(stm , _r6, 0, 1, 0, 0, 6);
+THUMB_PUSHPOP(stm , _r7, 0, 1, 0, 0, 7);
+THUMB_PUSHPOP(ldm , _r0, 0, 1, 1, 0, 0);
+THUMB_PUSHPOP(ldm , _r1, 0, 1, 1, 0, 1);
+THUMB_PUSHPOP(ldm , _r2, 0, 1, 1, 0, 2);
+THUMB_PUSHPOP(ldm , _r3, 0, 1, 1, 0, 3);
+THUMB_PUSHPOP(ldm , _r4, 0, 1, 1, 0, 4);
+THUMB_PUSHPOP(ldm , _r5, 0, 1, 1, 0, 5);
+THUMB_PUSHPOP(ldm , _r6, 0, 1, 1, 0, 6);
+THUMB_PUSHPOP(ldm , _r7, 0, 1, 1, 0, 7);
 
 static const cpu_instr_t thumb_bkpt =
 {
@@ -1002,7 +1003,7 @@ THUMB_BRANCH(ble, CPU_GET_FLAG_Z(cpu) || CPU_GET_FLAG_N(cpu) != CPU_GET_FLAG_V(c
 
 static void exec_swi(cpu_t *cpu)
 {
-	cpu->regs.spsr_modes[2] = cpu->regs.cpsr;
+	cpu->regs.spsr_modes[1] = cpu->regs.cpsr;
 	CPU_SET_MODE(cpu, CPU_MODE_SVC);
 	cpu_update_mode(cpu);
 	CPU_SET_FLAG_I(cpu, 1);
@@ -1013,7 +1014,7 @@ static void exec_swi(cpu_t *cpu)
 
 static void print_swi(cpu_t *cpu, char *data, size_t size)
 {
-	uint32_t nn = cpu->instr_opcode & 0xFFFFFF;
+	uint32_t nn = cpu->instr_opcode & 0xFF;
 	snprintf(data, size, "swi 0x%x", nn);
 }
 

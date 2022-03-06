@@ -35,11 +35,11 @@ uint##s##_t mbc_get##s(mbc_t *mbc, uint32_t addr) \
 		case 0x8: \
 		case 0x9: /* rom0 */ \
 		case 0xA: \
-		case 0xB: /* rom */ \
+		case 0xB: /* rom1 */ \
 		case 0xC: \
 		case 0xD: /* rom2 */ \
 		{ \
-			uint32_t a = addr & 0x1FFFFF; \
+			uint32_t a = addr & 0x1FFFFFF; \
 			if (a < mbc->size) \
 				return *(uint##s##_t*)&mbc->data[a]; \
 			if (s == 16) \
@@ -59,7 +59,7 @@ uint##s##_t mbc_get##s(mbc_t *mbc, uint32_t addr) \
 		case 0xF: /* unused */ \
 			break; \
 	} \
-	printf("unknown mbc addr: %08x\n", addr); \
+	printf("unknown get" #s " mbc addr: %08x\n", addr); \
 	return 0; \
 }
 
@@ -77,7 +77,7 @@ void mbc_set##size(mbc_t *mbc, uint32_t addr, uint##size##_t v) \
 		case 0x8: \
 		case 0x9: /* rom0 */ \
 		case 0xA: \
-		case 0xB: /* rom */ \
+		case 0xB: /* rom1 */ \
 		case 0xC: \
 		case 0xD: /* rom2 */ \
 			return; \
@@ -86,7 +86,7 @@ void mbc_set##size(mbc_t *mbc, uint32_t addr, uint##size##_t v) \
 		case 0xF: /* unused */ \
 			break; \
 	} \
-	printf("unknown mbc addr: %08x\n", addr); \
+	printf("unknown set" #size " mbc addr: %08x\n", addr); \
 	return; \
 }
 

@@ -132,6 +132,7 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 			       cpu_get_reg(cpu, 0xE),
 			       cpu_get_reg(cpu, 0xF));
 		}
+		fflush(stdout);
 	}
 }
 
@@ -154,18 +155,18 @@ static bool handle_interrupt(cpu_t *cpu)
 	{
 		if (!(ints & (1 << i)))
 			continue;
-		cpu->regs.spsr_modes[4] = cpu->regs.cpsr;
+		cpu->regs.spsr_modes[3] = cpu->regs.cpsr;
 		CPU_SET_MODE(cpu, CPU_MODE_IRQ);
 		cpu_update_mode(cpu);
 		CPU_SET_FLAG_I(cpu, 1);
 		if (CPU_GET_FLAG_T(cpu))
 		{
 			CPU_SET_FLAG_T(cpu, 0);
-			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 2);
+			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 4);
 		}
 		else
 		{
-			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 4);
+			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 8);
 		}
 		cpu_set_reg(cpu, CPU_REG_PC, 0x18);
 		return true;
@@ -199,8 +200,8 @@ static bool decode_instruction(cpu_t *cpu)
 
 void cpu_cycle(cpu_t *cpu)
 {
-	//if (cpu_get_reg(cpu, 15) == 0x1A84)
-	//	cpu->debug = CPU_DEBUG_INSTR | CPU_DEBUG_REGS | CPU_DEBUG_REGS_ML;
+	//if (cpu_get_reg(cpu, 15) >= 0x4000)
+	//	cpu->debug = CPU_DEBUG_INSTR | CPU_DEBUG_REGS;
 	//if (cpu_get_reg(cpu, 15) == 0x872)
 	//	cpu->debug = 0;
 
@@ -254,32 +255,32 @@ void cpu_update_mode(cpu_t *cpu)
 	{
 		case CPU_MODE_USR:
 		case CPU_MODE_SYS:
-			cpu->regs.spsr = &cpu->regs.spsr_modes[0];
+			cpu->regs.spsr = &cpu->regs.cpsr;
 			break;
 		case CPU_MODE_FIQ:
 			for (size_t i = 8; i < 15; ++i)
 				cpu->regs.rptr[i] = &cpu->regs.r_fiq[i - 8];
-			cpu->regs.spsr = &cpu->regs.spsr_modes[1];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[0];
 			break;
 		case CPU_MODE_SVC:
 			for (size_t i = 13; i < 15; ++i)
 				cpu->regs.rptr[i] = &cpu->regs.r_svc[i - 13];
-			cpu->regs.spsr = &cpu->regs.spsr_modes[2];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[1];
 			break;
 		case CPU_MODE_ABT:
 			for (size_t i = 13; i < 15; ++i)
 				cpu->regs.rptr[i] = &cpu->regs.r_abt[i - 13];
-			cpu->regs.spsr = &cpu->regs.spsr_modes[3];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[2];
 			break;
 		case CPU_MODE_IRQ:
 			for (size_t i = 13; i < 15; ++i)
 				cpu->regs.rptr[i] = &cpu->regs.r_irq[i - 13];
-			cpu->regs.spsr = &cpu->regs.spsr_modes[4];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[3];
 			break;
 		case CPU_MODE_UND:
 			for (size_t i = 13; i < 15; ++i)
 				cpu->regs.rptr[i] = &cpu->regs.r_und[i - 13];
-			cpu->regs.spsr = &cpu->regs.spsr_modes[5];
+			cpu->regs.spsr = &cpu->regs.spsr_modes[4];
 			break;
 		default:
 			printf("unknown mode: %x\n", CPU_GET_MODE(cpu));
