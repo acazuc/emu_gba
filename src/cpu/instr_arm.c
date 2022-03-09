@@ -1103,9 +1103,33 @@ STLDC(ptm);
 STLDC(unp);
 STLDC(ptp);
 
+static void exec_clz(cpu_t *cpu)
+{
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF;
+	uint32_t rmr = (cpu->instr_opcode >>  0) & 0xF;
+	uint32_t rm = cpu_get_reg(cpu, rmr);
+	uint32_t nzero = 0;
+	for (int i = 31; i >= 0; --i)
+	{
+		if (rm & (1 << i))
+			break;
+		nzero++;
+	}
+	cpu_set_reg(cpu, rd, nzero);
+}
+
+static void print_clz(cpu_t *cpu, char *data, size_t size)
+{
+	uint32_t rd = (cpu->instr_opcode >> 12) & 0xF;
+	uint32_t rm = (cpu->instr_opcode >>  0) & 0xF;
+	snprintf(data, size, "clz r%d, r%d", rd, rm);
+}
+
 static const cpu_instr_t arm_clz =
 {
 	.name = "clz",
+	.exec = exec_clz,
+	.print = print_clz,
 };
 
 static const cpu_instr_t arm_bkpt =

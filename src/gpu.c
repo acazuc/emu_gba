@@ -106,6 +106,11 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y)
 	return;
 #endif
 
+	uint8_t written[240] = {0};
+	uint16_t bldalpha = mem_get_reg16(gpu->mem, MEM_REG_BLDALPHA);
+	uint32_t eva = (bldalpha >> 0) & 0x1F;
+	uint32_t evb = (bldalpha >> 8) & 0x1F;
+
 	for (int16_t i = 128; i >= 0; --i)
 	{
 		uint16_t attr0 = mem_get_oam16(gpu->mem, i * 8);
@@ -221,10 +226,26 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y)
 					TO8((col >> 0x0) & 0x1F),
 					0xFF,
 				};
+				if (written[screenx])
+				{
+					uint8_t *cur = &gpu->data[(240 * y + screenx) * 4];
+					color[0] = ((color[0] * eva) >> 4) + ((cur[0] * evb) >> 4);
+					color[1] = ((color[1] * eva) >> 4) + ((cur[1] * evb) >> 4);
+					color[2] = ((color[2] * eva) >> 4) + ((cur[2] * evb) >> 4);
+					printf("eva: %x, evb: %x\n", eva, evb);
+				}
+				else
+				{
+					written[screenx] = 1;
+				}
 				memcpy(&gpu->data[(240 * y + screenx) * 4], color, 4);
 			}
 		}
 	}
+}
+
+static void draw_window_obj(gpu_t *gpu, uint8_t y)
+{
 }
 
 static void draw_mode0(gpu_t *gpu, uint8_t y)
@@ -275,6 +296,8 @@ static void draw_mode2(gpu_t *gpu, uint8_t y)
 		draw_window(gpu, y, 0);
 	if (display & (1 << 0xE))
 		draw_window(gpu, y, 1);
+	if (display & (1 << 0xF))
+		draw_window_obj(gpu, y);
 }
 
 static void draw_mode3(gpu_t *gpu, uint8_t y)
@@ -285,11 +308,13 @@ static void draw_mode3(gpu_t *gpu, uint8_t y)
 	if (display & (1 << 0xA))
 		draw_background(gpu, y, 2, bg2_data);
 	if (display & (1 << 0xC))
-		draw_objects(gpu, 0x10000, y);
+		draw_objects(gpu, 0x14000, y);
 	if (display & (1 << 0xD))
 		draw_window(gpu, y, 0);
 	if (display & (1 << 0xE))
 		draw_window(gpu, y, 1);
+	if (display & (1 << 0xF))
+		draw_window_obj(gpu, y);
 }
 
 static void draw_mode4(gpu_t *gpu, uint8_t y)
