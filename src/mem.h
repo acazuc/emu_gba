@@ -149,6 +149,11 @@ static inline uint8_t mem_get_vram8(mem_t *mem, uint32_t addr)
 	return mem->vram[addr];
 }
 
+static inline uint16_t mem_get_vram16(mem_t *mem, uint32_t addr)
+{
+	return *(uint16_t*)&mem->vram[addr & ~1];
+}
+
 static inline uint16_t mem_get_bg_palette(mem_t *mem, uint32_t addr)
 {
 	return *(uint16_t*)&mem->palette[addr];
