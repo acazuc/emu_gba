@@ -1,4 +1,4 @@
-#include "instr_arm.h"
+#include "instr.h"
 #include "../cpu.h"
 #include "../mem.h"
 #include <stdlib.h>

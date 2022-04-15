@@ -62,7 +62,11 @@ uint##size##_t mem_get##size(mem_t *mem, uint32_t addr) \
 	{ \
 		case 0x0: /* bios */ \
 			if (addr < 0x4000) \
-				return *(uint##size##_t*)&mem->bios[addr]; \
+			{ \
+				if (cpu_get_reg(mem->gba->cpu, CPU_REG_PC) < 0x4000) \
+					return *(uint##size##_t*)&mem->bios[addr]; \
+				return *(uint##size##_t*)&mem->bios[mem->gba->cpu->last_bios_decode]; \
+			} \
 			break; \
 		case 0x1: /* empty */ \
 			break; \
@@ -186,9 +190,10 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 				case MEM_REG_BG3X: \
 				case MEM_REG_BG3Y: \
 				case MEM_REG_IME: \
+				case MEM_REG_IE: \
 					break; \
 				default: \
-					/*printf("writing to unknown register [%04x] = %x\n", a, v);*/ \
+					printf("writing " #size " to unknown register [%04x] = %x\n", a, v); \
 					break; \
 			} \
 			*(uint##size##_t*)&mem->io_regs[a] = v; \
@@ -226,7 +231,7 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 			return; \
 	} \
 end: \
-	printf("unknown set"#size" addr: %08x\n", addr); \
+	printf("unknown set" #size " addr: %08x\n", addr); \
 }
 
 MEM_SET(8);

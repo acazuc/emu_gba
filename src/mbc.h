@@ -7,7 +7,8 @@
 typedef struct mbc_s
 {
 	uint8_t *data;
-	size_t size;
+	size_t data_size;
+	uint8_t sram[0x10000];
 } mbc_t;
 
 mbc_t *mbc_new(const void *data, size_t size);

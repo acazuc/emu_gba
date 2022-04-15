@@ -13,4 +13,7 @@ typedef struct cpu_instr_s
 	void (*print)(cpu_t *cpu, char *data, size_t size);
 } cpu_instr_t;
 
+extern const cpu_instr_t *cpu_instr_thumb[0x400];
+extern const cpu_instr_t *cpu_instr_arm[0x1000];
+
 #endif

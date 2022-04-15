@@ -84,6 +84,7 @@ typedef struct cpu_s
 	cpu_regs_t regs;
 	mem_t *mem;
 	const cpu_instr_t *instr;
+	uint32_t last_bios_decode;
 	uint32_t instr_opcode;
 	uint32_t instr_delay;
 	uint8_t debug;

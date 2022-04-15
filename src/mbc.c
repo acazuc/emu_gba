@@ -15,7 +15,7 @@ mbc_t *mbc_new(const void *data, size_t size)
 		return NULL;
 
 	memcpy(mbc->data, data, size);
-	mbc->size = size;
+	mbc->data_size = size;
 	return mbc;
 }
 
@@ -27,8 +27,8 @@ void mbc_del(mbc_t *mbc)
 	free(mbc);
 }
 
-#define MBC_GET(s) \
-uint##s##_t mbc_get##s(mbc_t *mbc, uint32_t addr) \
+#define MBC_GET(size) \
+uint##size##_t mbc_get##size(mbc_t *mbc, uint32_t addr) \
 { \
 	switch ((addr >> 24) & 0xF) \
 	{ \
@@ -40,11 +40,11 @@ uint##s##_t mbc_get##s(mbc_t *mbc, uint32_t addr) \
 		case 0xD: /* rom2 */ \
 		{ \
 			uint32_t a = addr & 0x1FFFFFF; \
-			if (a < mbc->size) \
-				return *(uint##s##_t*)&mbc->data[a]; \
-			if (s == 16) \
+			if (a < mbc->data_size) \
+				return *(uint##size##_t*)&mbc->data[a]; \
+			if (size == 16) \
 				return addr >> 1; \
-			if (s == 32) \
+			if (size == 32) \
 			{ \
 				uint16_t lo = addr >> 1; \
 				uint16_t hi = lo + 1; \
@@ -52,14 +52,15 @@ uint##s##_t mbc_get##s(mbc_t *mbc, uint32_t addr) \
 			} \
 			break; \
 		} \
-		case 0xE: \
-			if (addr < 0xE010000) \
-				return 0; /* XXX: SRAM */ \
-			break; \
+		case 0xE: /* sram */ \
+		{ \
+			uint32_t a = addr & 0xFFFF; \
+			return *(uint##size##_t*)&mbc->sram[a]; \
+		} \
 		case 0xF: /* unused */ \
 			break; \
 	} \
-	printf("unknown get" #s " mbc addr: %08x\n", addr); \
+	printf("unknown get" #size " mbc addr: %08x\n", addr); \
 	return 0; \
 }
 
@@ -81,8 +82,12 @@ void mbc_set##size(mbc_t *mbc, uint32_t addr, uint##size##_t v) \
 		case 0xC: \
 		case 0xD: /* rom2 */ \
 			return; \
-		case 0xE: \
+		case 0xE: /* sram */ \
+		{ \
+			uint32_t a = addr & 0xFFFF; \
+			*(uint##size##_t*)&mbc->sram[a] = v; \
 			return; \
+		} \
 		case 0xF: /* unused */ \
 			break; \
 	} \

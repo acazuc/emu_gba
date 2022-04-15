@@ -1,8 +1,6 @@
 #include "cpu.h"
 #include "mem.h"
 #include "cpu/instr.h"
-#include "cpu/instr_thumb.h"
-#include "cpu/instr_arm.h"
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
@@ -178,12 +176,18 @@ static bool decode_instruction(cpu_t *cpu)
 {
 	if (CPU_GET_FLAG_T(cpu))
 	{
-		cpu->instr_opcode = mem_get16(cpu->mem, cpu_get_reg(cpu, CPU_REG_PC));
+		uint32_t pc = cpu_get_reg(cpu, CPU_REG_PC);
+		if (pc < 0x4000)
+			cpu->last_bios_decode = pc + 4;
+		cpu->instr_opcode = mem_get16(cpu->mem, pc);
 		cpu->instr = cpu_instr_thumb[cpu->instr_opcode >> 6];
 	}
 	else
 	{
-		cpu->instr_opcode = mem_get32(cpu->mem, cpu_get_reg(cpu, CPU_REG_PC));
+		uint32_t pc = cpu_get_reg(cpu, CPU_REG_PC);
+		if (pc < 0x4000)
+			cpu->last_bios_decode = pc + 8;
+		cpu->instr_opcode = mem_get32(cpu->mem, pc);
 		if (!check_arm_cond(cpu, cpu->instr_opcode >> 28))
 		{
 			if (cpu->debug)
@@ -200,9 +204,9 @@ static bool decode_instruction(cpu_t *cpu)
 
 void cpu_cycle(cpu_t *cpu)
 {
-	//if (cpu_get_reg(cpu, 15) >= 0x4000)
+	//if (cpu_get_reg(cpu, CPU_REG_PC) >= 0x4000)
 	//	cpu->debug = CPU_DEBUG_INSTR | CPU_DEBUG_REGS;
-	//if (cpu_get_reg(cpu, 15) == 0x872)
+	//if (cpu_get_reg(cpu, CPU_REG_PC) == 0x872)
 	//	cpu->debug = 0;
 
 	switch (cpu->instr_delay)

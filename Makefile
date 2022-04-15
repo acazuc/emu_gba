@@ -2,7 +2,7 @@ NAME = emu_gba.so
 
 CXX = gcc
 
-CFLAGS = -std=c99 -Wall -Wextra -Ofast -pipe -g -fPIC
+CFLAGS = -std=c99 -Wall -Wextra -Ofast -pipe -g -fPIC -march=native
 
 LD = ld
 
@@ -19,8 +19,8 @@ SRCS_NAME = libretro/libretro.c \
             mbc.c \
             cpu.c \
             gba.c \
-            cpu/instr_thumb.c \
-            cpu/instr_arm.c \
+            cpu/thumb.c \
+            cpu/arm.c \
 
 SRCS = $(addprefix $(SRCS_PATH), $(SRCS_NAME))
 
@@ -51,6 +51,4 @@ clean:
 	@rm -f $(OBJS)
 	@rm -f $(NAME)
 
-re: clean all
-
-.PHONY: all clean re odir
+.PHONY: all clean odir
