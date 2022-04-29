@@ -77,6 +77,15 @@
 #define MEM_REG_DMA3CNT_L   0x0DC
 #define MEM_REG_DMA3CNT_H   0x0DE
 
+#define MEM_REG_TM0CNT_L    0x100
+#define MEM_REG_TM0CNT_H    0x102
+#define MEM_REG_TM1CNT_L    0x104
+#define MEM_REG_TM1CNT_H    0x106
+#define MEM_REG_TM2CNT_L    0x108
+#define MEM_REG_TM2CNT_H    0x10A
+#define MEM_REG_TM3CNT_L    0x10C
+#define MEM_REG_TM3CNT_H    0x10E
+
 #define MEM_REG_IE          0x200
 #define MEM_REG_IF          0x202
 #define MEM_REG_WAITCNT     0x204
@@ -95,10 +104,16 @@ typedef struct mem_dma_s
 	uint32_t len;
 } mem_dma_t;
 
+typedef struct mem_timer_s
+{
+	uint16_t v;
+} mem_timer_t;
+
 typedef struct mem_s
 {
 	gba_t *gba;
 	mbc_t *mbc;
+	mem_timer_t timers[4];
 	mem_dma_t dma[4];
 	uint8_t bios[0x4000];
 	uint8_t board_wram[0x40000];
@@ -111,6 +126,9 @@ typedef struct mem_s
 
 mem_t *mem_new(gba_t *gba, mbc_t *mbc);
 void mem_del(mem_t *mem);
+
+void mem_timers(mem_t *mem);
+void mem_dma(mem_t *mem);
 
 uint8_t  mem_get8 (mem_t *mem, uint32_t addr);
 uint16_t mem_get16(mem_t *mem, uint32_t addr);
@@ -137,6 +155,16 @@ static inline uint16_t mem_get_reg16(mem_t *mem, uint32_t reg)
 static inline void mem_set_reg16(mem_t *mem, uint32_t reg, uint16_t v)
 {
 	*(uint16_t*)&mem->io_regs[reg] = v;
+}
+
+static inline uint8_t mem_get_reg8(mem_t *mem, uint32_t reg)
+{
+	return mem->io_regs[reg];
+}
+
+static inline void mem_set_reg8(mem_t *mem, uint32_t reg, uint8_t v)
+{
+	mem->io_regs[reg] = v;
 }
 
 static inline uint16_t mem_get_oam16(mem_t *mem, uint32_t addr)

@@ -31,6 +31,7 @@ typedef struct gba_s
 	apu_t *apu;
 	cpu_t *cpu;
 	gpu_t *gpu;
+	uint32_t cycle;
 } gba_t;
 
 gba_t *gba_new(const void *rom_data, size_t rom_size);

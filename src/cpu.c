@@ -92,7 +92,10 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 	{
 		if (cpu->debug & CPU_DEBUG_REGS_ML)
 		{
-			printf("r00=%08x r01=%08x r02=%08x r03=%08x\nr04=%08x r05=%08x r06=%08x r07=%08x\nr08=%08x r09=%08x r10=%08x r11=%08x\nr12=%08x r13=%08x r14=%08x r15=%08x\n",
+			printf("r00=%08x r01=%08x r02=%08x r03=%08x\n"
+			       "r04=%08x r05=%08x r06=%08x r07=%08x\n"
+			       "r08=%08x r09=%08x r10=%08x r11=%08x\n"
+			       "r12=%08x r13=%08x r14=%08x r15=%08x\n",
 			       cpu_get_reg(cpu, 0x0),
 			       cpu_get_reg(cpu, 0x1),
 			       cpu_get_reg(cpu, 0x2),
@@ -112,7 +115,10 @@ static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 		}
 		else
 		{
-			printf("r00=%08x r01=%08x r02=%08x r03=%08x r04=%08x r05=%08x r06=%08x r07=%08x r08=%08x r09=%08x r10=%08x r11=%08x r12=%08x r13=%08x r14=%08x r15=%08x\n",
+			printf("r00=%08x r01=%08x r02=%08x r03=%08x "
+			       "r04=%08x r05=%08x r06=%08x r07=%08x "
+			       "r08=%08x r09=%08x r10=%08x r11=%08x "
+			       "r12=%08x r13=%08x r14=%08x r15=%08x\n",
 			       cpu_get_reg(cpu, 0x0),
 			       cpu_get_reg(cpu, 0x1),
 			       cpu_get_reg(cpu, 0x2),
@@ -205,7 +211,7 @@ static bool decode_instruction(cpu_t *cpu)
 void cpu_cycle(cpu_t *cpu)
 {
 	//if (cpu_get_reg(cpu, CPU_REG_PC) >= 0x4000)
-	//	cpu->debug = CPU_DEBUG_INSTR | CPU_DEBUG_REGS;
+	//	cpu->debug = CPU_DEBUG_INSTR | CPU_DEBUG_REGS | CPU_DEBUG_REGS_ML;
 	//if (cpu_get_reg(cpu, CPU_REG_PC) == 0x872)
 	//	cpu->debug = 0;
 

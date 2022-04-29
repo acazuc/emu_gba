@@ -37,16 +37,397 @@ void mem_del(mem_t *mem)
 	free(mem);
 }
 
-static void start_dma(mem_t *mem, uint8_t dma)
+void mem_timers(mem_t *mem)
 {
-	static uint32_t len_masks[4] = {0x3FFF, 0x3FFF, 0x3FFF, 0xFFFF};
+	static const uint16_t masks[4] = {0, 0x3F, 0xFF, 0x3FF};
+	for (size_t i = 0; i < 4; ++i)
+	{
+		uint8_t cnt_h = mem_get_reg8(mem, MEM_REG_TM0CNT_H + i * 4);
+		if (!(cnt_h & (1 << 7)))
+			continue;
+		if ((mem->gba->cycle & masks[cnt_h & 3]))
+			continue;
+		mem->timers[i].v++;
+		if (!mem->timers[i].v)
+		{
+			mem->timers[i].v = mem_get_reg16(mem, MEM_REG_TM0CNT_L + i * 4);
+			if (cnt_h & (1 << 6))
+				mem_set_reg16(mem, MEM_REG_IF, mem_get_reg16(mem, MEM_REG_IF) | (1 << (3 + i)));
+		}
+	}
+}
+
+void mem_dma(mem_t *mem)
+{
+	for (size_t i = 0; i < 4; ++i)
+	{
+		if (!mem->dma[i].enabled)
+			continue;
+	}
+}
+
+static void dma_control(mem_t *mem, uint8_t dma)
+{
+	static uint32_t len_max[4] = {0x4000, 0x4000, 0x4000, 0x10000};
 	mem->dma[dma].src = mem_get_reg32(mem, MEM_REG_DMA0SAD + 0xC * dma);
 	mem->dma[dma].dst = mem_get_reg32(mem, MEM_REG_DMA0DAD + 0xC * dma);
-	mem->dma[dma].len = mem_get_reg32(mem, MEM_REG_DMA0CNT_L + 0xC * dma) & len_masks[dma];
-	uint32_t cnt_h = mem_get_reg32(mem, MEM_REG_DMA0CNT_H + 0xC * dma);
+	mem->dma[dma].len = mem_get_reg16(mem, MEM_REG_DMA0CNT_L + 0xC * dma) - 1;
+	if (mem->dma[dma].len)
+	{
+		if (mem->dma[dma].len > len_max[dma])
+			mem->dma[dma].len = len_max[dma];
+	}
+	else
+	{
+		mem->dma[dma].len = len_max[dma];
+	}
+	uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * dma);
 	mem->dma[dma].enabled = cnt_h & (1 << 15);
+	printf("%s DMA of %x bytes from %x to %x\n", mem->dma[dma].enabled ? "starting" : "preparing", mem->dma[dma].len, mem->dma[dma].src, mem->dma[dma].dst);
+	if (mem->dma[dma].dst == 0x40000a0 || mem->dma[dma].dst == 0x40000a4)
+		return;
 	if (mem->dma[dma].enabled)
-		printf("starting DMA of %x bytes from %x to %x\n", mem->dma[dma].len, mem->dma[dma].src, mem->dma[dma].dst);
+	{
+		uint32_t src = mem->dma[dma].src;
+		uint32_t dst = mem->dma[dma].dst;
+		for (size_t i = 0; i < mem->dma[dma].len; ++i)
+		{
+			if (cnt_h & (1 << 10))
+			{
+				mem_set32(mem, dst, mem_get32(mem, src));
+				switch ((cnt_h >> 5) & 3)
+				{
+					case 0:
+						dst += 4;
+						break;
+					case 1:
+						dst -= 4;
+						break;
+					case 2:
+						break;
+					case 3:
+						dst += 4;
+						//XXX reload
+						break;
+				}
+				switch ((cnt_h >> 7) & 3)
+				{
+					case 0:
+						src += 4;
+						break;
+					case 1:
+						src -= 4;
+						break;
+					case 2:
+						break;
+					case 3:
+						break;
+				}
+			}
+			else
+			{
+				mem_set16(mem, dst, mem_get16(mem, src));
+				switch ((cnt_h >> 5) & 3)
+				{
+					case 0:
+						dst += 2;
+						break;
+					case 1:
+						dst -= 2;
+						break;
+					case 2:
+						break;
+					case 3:
+						dst += 2;
+						//XXX reload
+						break;
+				}
+				switch ((cnt_h >> 7) & 3)
+				{
+					case 0:
+						src += 2;
+						break;
+					case 1:
+						src -= 2;
+						break;
+					case 2:
+						break;
+					case 3:
+						break;
+				}
+			}
+		}
+	}
+}
+
+static void timer_control(mem_t *mem, uint8_t timer, uint8_t v)
+{
+	uint8_t prev = mem_get_reg8(mem, MEM_REG_TM0CNT_H + timer * 4);
+	mem_set_reg8(mem, MEM_REG_TM0CNT_H + timer * 4, v);
+	if ((v & (1 << 7)) && !(prev & (1 << 7)))
+		mem->timers[timer].v = mem_get_reg16(mem, MEM_REG_TM0CNT_L);
+}
+
+static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
+{
+	switch (reg)
+	{
+		case MEM_REG_HALTCNT:
+			if (v & 0x80)
+				mem->gba->cpu->state = CPU_STATE_STOP;
+			else
+				mem->gba->cpu->state = CPU_STATE_HALT;
+			return;
+		case MEM_REG_IF:
+		case MEM_REG_IF + 1:
+			mem->io_regs[reg] &= ~v;
+			return;
+		case MEM_REG_DMA0CNT_H + 1:
+			mem->io_regs[reg] = v;
+			dma_control(mem, 0);
+			return;
+		case MEM_REG_DMA1CNT_H + 1:
+			mem->io_regs[reg] = v;
+			dma_control(mem, 1);
+			return;
+		case MEM_REG_DMA2CNT_H + 1:
+			mem->io_regs[reg] = v;
+			dma_control(mem, 2);
+			return;
+		case MEM_REG_DMA3CNT_H + 1:
+			mem->io_regs[reg] = v;
+			dma_control(mem, 3);
+			return;
+		case MEM_REG_TM0CNT_H:
+			timer_control(mem, 0, v);
+			return;
+		case MEM_REG_TM1CNT_H:
+			timer_control(mem, 1, v);
+			return;
+		case MEM_REG_TM2CNT_H:
+			timer_control(mem, 2, v);
+			return;
+		case MEM_REG_TM3CNT_H:
+			timer_control(mem, 3, v);
+			return;
+		case MEM_REG_DMA0SAD:
+		case MEM_REG_DMA0SAD + 1:
+		case MEM_REG_DMA0SAD + 2:
+		case MEM_REG_DMA0SAD + 3:
+		case MEM_REG_DMA0DAD:
+		case MEM_REG_DMA0DAD + 1:
+		case MEM_REG_DMA0DAD + 2:
+		case MEM_REG_DMA0DAD + 3:
+		case MEM_REG_DMA0CNT_L:
+		case MEM_REG_DMA0CNT_L + 1:
+		case MEM_REG_DMA1SAD:
+		case MEM_REG_DMA1SAD + 1:
+		case MEM_REG_DMA1SAD + 2:
+		case MEM_REG_DMA1SAD + 3:
+		case MEM_REG_DMA1DAD:
+		case MEM_REG_DMA1DAD + 1:
+		case MEM_REG_DMA1DAD + 2:
+		case MEM_REG_DMA1DAD + 3:
+		case MEM_REG_DMA1CNT_L:
+		case MEM_REG_DMA1CNT_L + 1:
+		case MEM_REG_DMA2SAD:
+		case MEM_REG_DMA2SAD + 1:
+		case MEM_REG_DMA2SAD + 2:
+		case MEM_REG_DMA2SAD + 3:
+		case MEM_REG_DMA2DAD:
+		case MEM_REG_DMA2DAD + 1:
+		case MEM_REG_DMA2DAD + 2:
+		case MEM_REG_DMA2DAD + 3:
+		case MEM_REG_DMA2CNT_L:
+		case MEM_REG_DMA2CNT_L + 1:
+		case MEM_REG_DMA3SAD:
+		case MEM_REG_DMA3SAD + 1:
+		case MEM_REG_DMA3SAD + 2:
+		case MEM_REG_DMA3SAD + 3:
+		case MEM_REG_DMA3DAD:
+		case MEM_REG_DMA3DAD + 1:
+		case MEM_REG_DMA3DAD + 2:
+		case MEM_REG_DMA3DAD + 3:
+		case MEM_REG_DMA3CNT_L:
+		case MEM_REG_DMA3CNT_L  +1:
+		case MEM_REG_DISPCNT:
+		case MEM_REG_DISPCNT + 1:
+		case MEM_REG_DISPSTAT:
+		case MEM_REG_DISPSTAT + 1:
+		case MEM_REG_VCOUNT:
+		case MEM_REG_VCOUNT + 1:
+		case MEM_REG_BG0CNT:
+		case MEM_REG_BG0CNT + 1:
+		case MEM_REG_BG1CNT:
+		case MEM_REG_BG1CNT + 1:
+		case MEM_REG_BG2CNT:
+		case MEM_REG_BG2CNT + 1:
+		case MEM_REG_BG3CNT:
+		case MEM_REG_BG3CNT + 1:
+		case MEM_REG_BG0HOFS:
+		case MEM_REG_BG0HOFS + 1:
+		case MEM_REG_BG0VOFS:
+		case MEM_REG_BG0VOFS + 1:
+		case MEM_REG_BG1HOFS:
+		case MEM_REG_BG1HOFS + 1:
+		case MEM_REG_BG1VOFS:
+		case MEM_REG_BG1VOFS + 1:
+		case MEM_REG_BG2HOFS:
+		case MEM_REG_BG2HOFS + 1:
+		case MEM_REG_BG2VOFS:
+		case MEM_REG_BG2VOFS + 1:
+		case MEM_REG_BG3HOFS:
+		case MEM_REG_BG3HOFS + 1:
+		case MEM_REG_BG3VOFS:
+		case MEM_REG_BG3VOFS + 1:
+		case MEM_REG_BG2PA:
+		case MEM_REG_BG2PA + 1:
+		case MEM_REG_BG2PB:
+		case MEM_REG_BG2PB + 1:
+		case MEM_REG_BG2PC:
+		case MEM_REG_BG2PC + 1:
+		case MEM_REG_BG2PD:
+		case MEM_REG_BG2PD + 1:
+		case MEM_REG_BG3PA:
+		case MEM_REG_BG3PA + 1:
+		case MEM_REG_BG3PB:
+		case MEM_REG_BG3PB + 1:
+		case MEM_REG_BG3PC:
+		case MEM_REG_BG3PC + 1:
+		case MEM_REG_BG3PD:
+		case MEM_REG_BG3PD + 1:
+		case MEM_REG_BG2X:
+		case MEM_REG_BG2X + 1:
+		case MEM_REG_BG2X + 2:
+		case MEM_REG_BG2X + 3:
+		case MEM_REG_BG2Y:
+		case MEM_REG_BG2Y + 1:
+		case MEM_REG_BG2Y + 2:
+		case MEM_REG_BG2Y + 3:
+		case MEM_REG_BG3X:
+		case MEM_REG_BG3X + 1:
+		case MEM_REG_BG3X + 2:
+		case MEM_REG_BG3X + 3:
+		case MEM_REG_BG3Y:
+		case MEM_REG_BG3Y + 1:
+		case MEM_REG_BG3Y + 2:
+		case MEM_REG_BG3Y + 3:
+		case MEM_REG_WAVE_RAM:
+		case MEM_REG_WAVE_RAM + 0x1:
+		case MEM_REG_WAVE_RAM + 0x2:
+		case MEM_REG_WAVE_RAM + 0x3:
+		case MEM_REG_WAVE_RAM + 0x4:
+		case MEM_REG_WAVE_RAM + 0x5:
+		case MEM_REG_WAVE_RAM + 0x6:
+		case MEM_REG_WAVE_RAM + 0x7:
+		case MEM_REG_WAVE_RAM + 0x8:
+		case MEM_REG_WAVE_RAM + 0x9:
+		case MEM_REG_WAVE_RAM + 0xA:
+		case MEM_REG_WAVE_RAM + 0xB:
+		case MEM_REG_WAVE_RAM + 0xC:
+		case MEM_REG_WAVE_RAM + 0xD:
+		case MEM_REG_WAVE_RAM + 0xE:
+		case MEM_REG_WAVE_RAM + 0xF:
+		case MEM_REG_WAVE_RAM + 0x10:
+		case MEM_REG_WAVE_RAM + 0x11:
+		case MEM_REG_WAVE_RAM + 0x12:
+		case MEM_REG_WAVE_RAM + 0x13:
+		case MEM_REG_WAVE_RAM + 0x14:
+		case MEM_REG_WAVE_RAM + 0x15:
+		case MEM_REG_WAVE_RAM + 0x16:
+		case MEM_REG_WAVE_RAM + 0x17:
+		case MEM_REG_WAVE_RAM + 0x18:
+		case MEM_REG_WAVE_RAM + 0x19:
+		case MEM_REG_WAVE_RAM + 0x1A:
+		case MEM_REG_WAVE_RAM + 0x1B:
+		case MEM_REG_WAVE_RAM + 0x1C:
+		case MEM_REG_WAVE_RAM + 0x1D:
+		case MEM_REG_WAVE_RAM + 0x1E:
+		case MEM_REG_WAVE_RAM + 0x1F:
+		case MEM_REG_IME:
+		case MEM_REG_IME + 1:
+		case MEM_REG_IE:
+		case MEM_REG_IE + 1:
+		case MEM_REG_TM0CNT_L:
+		case MEM_REG_TM0CNT_L + 1:
+		case MEM_REG_TM0CNT_H + 1:
+		case MEM_REG_TM1CNT_L:
+		case MEM_REG_TM1CNT_L + 1:
+		case MEM_REG_TM1CNT_H + 1:
+		case MEM_REG_TM2CNT_L:
+		case MEM_REG_TM2CNT_L + 1:
+		case MEM_REG_TM2CNT_H + 1:
+		case MEM_REG_TM3CNT_L:
+		case MEM_REG_TM3CNT_L + 1:
+		case MEM_REG_TM3CNT_H + 1:
+			break;
+		default:
+			printf("writing to unknown register [%04x] = %x\n", reg, v);
+			break;
+	}
+	mem->io_regs[reg] = v;
+}
+
+static void set_reg32(mem_t *mem, uint32_t reg, uint32_t v)
+{
+	set_reg(mem, reg + 0, v >> 0);
+	set_reg(mem, reg + 1, v >> 8);
+	set_reg(mem, reg + 2, v >> 16);
+	set_reg(mem, reg + 3, v >> 24);
+}
+
+static void set_reg16(mem_t *mem, uint32_t reg, uint16_t v)
+{
+	set_reg(mem, reg + 0, v >> 0);
+	set_reg(mem, reg + 1, v >> 8);
+}
+
+static void set_reg8(mem_t *mem, uint32_t reg, uint8_t v)
+{
+	set_reg(mem, reg, v);
+}
+
+static uint8_t get_reg(mem_t *mem, uint32_t reg)
+{
+	switch (reg)
+	{
+		case MEM_REG_TM0CNT_L:
+			return mem->timers[0].v;
+		case MEM_REG_TM0CNT_L + 1:
+			return mem->timers[0].v >> 8;
+		case MEM_REG_TM1CNT_L:
+			return mem->timers[1].v;
+		case MEM_REG_TM1CNT_L + 1:
+			return mem->timers[1].v >> 8;
+		case MEM_REG_TM2CNT_L:
+			return mem->timers[2].v;
+		case MEM_REG_TM2CNT_L + 1:
+			return mem->timers[2].v >> 8;
+		case MEM_REG_TM3CNT_L:
+			return mem->timers[3].v;
+		case MEM_REG_TM3CNT_L + 1:
+			return mem->timers[3].v >> 8;
+	}
+	return mem->io_regs[reg];
+}
+
+static uint32_t get_reg32(mem_t *mem, uint32_t reg)
+{
+	return (get_reg(mem, reg + 0) << 0)
+	     | (get_reg(mem, reg + 1) << 8)
+	     | (get_reg(mem, reg + 2) << 16)
+	     | (get_reg(mem, reg + 3) << 24);
+}
+
+static uint16_t get_reg16(mem_t *mem, uint32_t reg)
+{
+	return (get_reg(mem, reg + 0) << 0)
+	     | (get_reg(mem, reg + 1) << 8);
+}
+
+static uint8_t get_reg8(mem_t *mem, uint32_t reg)
+{
+	return get_reg(mem, reg);
 }
 
 #define MEM_GET(size) \
@@ -78,12 +459,14 @@ uint##size##_t mem_get##size(mem_t *mem, uint32_t addr) \
 		case 0x3: /* chip wram */ \
 		{ \
 			uint32_t a = addr & 0x7FFF; \
+			if ((a & 0x7FFC) == 0x7FFC) \
+				printf("get %x to %x\n", a, *(uint##size##_t*)&mem->chip_wram[a]); \
 			return *(uint##size##_t*)&mem->chip_wram[a]; \
 		} \
 		case 0x4: /* registers */ \
 		{ \
 			uint32_t a = addr & 0x3FF; \
-			return *(uint##size##_t*)&mem->io_regs[a]; \
+			return get_reg##size(mem, a); \
 		} \
 		case 0x5: /* palette */ \
 		{ \
@@ -145,58 +528,15 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 		case 0x3: /* chip wram */ \
 		{ \
 			uint32_t a = addr & 0x7FFF; \
+			if ((a & 0x7FFC) == 0x7FFC) \
+				printf("set %x to %x\n", a, v); \
 			*(uint##size##_t*)&mem->chip_wram[a] = v; \
 			return; \
 		} \
 		case 0x4: /* registers */ \
 		{ \
 			uint32_t a = addr & 0x3FF; \
-			switch (a) \
-			{ \
-				case MEM_REG_HALTCNT: \
-					if (v & 0x80) \
-						mem->gba->cpu->state = CPU_STATE_STOP; \
-					else \
-						mem->gba->cpu->state = CPU_STATE_HALT; \
-					return; \
-				case MEM_REG_IF: \
-					*(uint##size##_t*)&mem->io_regs[a] &= ~v; \
-					return; \
-				case MEM_REG_DMA0CNT_H: \
-					start_dma(mem, 0); \
-					return; \
-				case MEM_REG_DMA1CNT_H: \
-					start_dma(mem, 1); \
-					return; \
-				case MEM_REG_DMA2CNT_H: \
-					start_dma(mem, 2); \
-					return; \
-				case MEM_REG_DMA3CNT_H: \
-					start_dma(mem, 3); \
-					return; \
-				case MEM_REG_DMA0SAD: \
-				case MEM_REG_DMA0DAD: \
-				case MEM_REG_DMA0CNT_L: \
-				case MEM_REG_DMA1SAD: \
-				case MEM_REG_DMA1DAD: \
-				case MEM_REG_DMA1CNT_L: \
-				case MEM_REG_DMA2SAD: \
-				case MEM_REG_DMA2DAD: \
-				case MEM_REG_DMA2CNT_L: \
-				case MEM_REG_DMA3SAD: \
-				case MEM_REG_DMA3DAD: \
-				case MEM_REG_DMA3CNT_L: \
-				case MEM_REG_DISPCNT: \
-				case MEM_REG_BG3X: \
-				case MEM_REG_BG3Y: \
-				case MEM_REG_IME: \
-				case MEM_REG_IE: \
-					break; \
-				default: \
-					printf("writing " #size " to unknown register [%04x] = %x\n", a, v); \
-					break; \
-			} \
-			*(uint##size##_t*)&mem->io_regs[a] = v; \
+			set_reg##size(mem, a, v); \
 			return; \
 		} \
 		case 0x5: /* palette */ \

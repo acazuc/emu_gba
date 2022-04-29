@@ -51,6 +51,9 @@ void gba_del(gba_t *gba)
 
 static void gba_cycle(gba_t *gba)
 {
+	gba->cycle++;
+	mem_dma(gba->mem);
+	mem_timers(gba->mem);
 	cpu_cycle(gba->cpu);
 }
 
