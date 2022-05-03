@@ -63,6 +63,54 @@ void mem_dma(mem_t *mem)
 	{
 		if (!mem->dma[i].enabled)
 			continue;
+		uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i);
+		uint32_t step;
+		if (cnt_h & (1 << 10))
+		{
+			mem_set32(mem, mem->dma[i].dst, mem_get32(mem, mem->dma[i].src));
+			step = 4;
+		}
+		else
+		{
+			mem_set16(mem, mem->dma[i].dst, mem_get16(mem, mem->dma[i].src));
+			step = 2;
+		}
+		switch ((cnt_h >> 5) & 3)
+		{
+			case 0:
+				mem->dma[i].dst += step;
+				break;
+			case 1:
+				mem->dma[i].dst -= step;
+				break;
+			case 2:
+				break;
+			case 3:
+				mem->dma[i].dst += step;
+				//XXX reload
+				break;
+		}
+		switch ((cnt_h >> 7) & 3)
+		{
+			case 0:
+				mem->dma[i].src += step;
+				break;
+			case 1:
+				mem->dma[i].src -= step;
+				break;
+			case 2:
+				break;
+			case 3:
+				break;
+		}
+		mem->dma[i].len--;
+		if (!mem->dma[i].len)
+		{
+			mem->dma[i].enabled = false;
+			mem_set_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i, mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i) & ~(1 << 15));
+			if (cnt_h & (1 << 14))
+				mem_set_reg16(mem, MEM_REG_IF, mem_get_reg16(mem, MEM_REG_IF) | (1 << (8 + i)));
+		}
 	}
 }
 
@@ -83,81 +131,9 @@ static void dma_control(mem_t *mem, uint8_t dma)
 	}
 	uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * dma);
 	mem->dma[dma].enabled = cnt_h & (1 << 15);
-	printf("%s DMA of %x bytes from %x to %x\n", mem->dma[dma].enabled ? "starting" : "preparing", mem->dma[dma].len, mem->dma[dma].src, mem->dma[dma].dst);
+	//printf("%s DMA of %x bytes from %x to %x\n", mem->dma[dma].enabled ? "starting" : "preparing", mem->dma[dma].len, mem->dma[dma].src, mem->dma[dma].dst);
 	if (mem->dma[dma].dst == 0x40000a0 || mem->dma[dma].dst == 0x40000a4)
 		return;
-	if (mem->dma[dma].enabled)
-	{
-		uint32_t src = mem->dma[dma].src;
-		uint32_t dst = mem->dma[dma].dst;
-		for (size_t i = 0; i < mem->dma[dma].len; ++i)
-		{
-			if (cnt_h & (1 << 10))
-			{
-				mem_set32(mem, dst, mem_get32(mem, src));
-				switch ((cnt_h >> 5) & 3)
-				{
-					case 0:
-						dst += 4;
-						break;
-					case 1:
-						dst -= 4;
-						break;
-					case 2:
-						break;
-					case 3:
-						dst += 4;
-						//XXX reload
-						break;
-				}
-				switch ((cnt_h >> 7) & 3)
-				{
-					case 0:
-						src += 4;
-						break;
-					case 1:
-						src -= 4;
-						break;
-					case 2:
-						break;
-					case 3:
-						break;
-				}
-			}
-			else
-			{
-				mem_set16(mem, dst, mem_get16(mem, src));
-				switch ((cnt_h >> 5) & 3)
-				{
-					case 0:
-						dst += 2;
-						break;
-					case 1:
-						dst -= 2;
-						break;
-					case 2:
-						break;
-					case 3:
-						dst += 2;
-						//XXX reload
-						break;
-				}
-				switch ((cnt_h >> 7) & 3)
-				{
-					case 0:
-						src += 2;
-						break;
-					case 1:
-						src -= 2;
-						break;
-					case 2:
-						break;
-					case 3:
-						break;
-				}
-			}
-		}
-	}
 }
 
 static void timer_control(mem_t *mem, uint8_t timer, uint8_t v)
@@ -209,6 +185,9 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 			return;
 		case MEM_REG_TM3CNT_H:
 			timer_control(mem, 3, v);
+			return;
+		case MEM_REG_KEYINPUT:
+		case MEM_REG_KEYINPUT + 1:
 			return;
 		case MEM_REG_DMA0SAD:
 		case MEM_REG_DMA0SAD + 1:
@@ -362,7 +341,7 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 		case MEM_REG_TM3CNT_H + 1:
 			break;
 		default:
-			printf("writing to unknown register [%04x] = %x\n", reg, v);
+			//printf("writing to unknown register [%04x] = %x\n", reg, v);
 			break;
 	}
 	mem->io_regs[reg] = v;
@@ -407,6 +386,36 @@ static uint8_t get_reg(mem_t *mem, uint32_t reg)
 			return mem->timers[3].v;
 		case MEM_REG_TM3CNT_L + 1:
 			return mem->timers[3].v >> 8;
+		case MEM_REG_KEYINPUT:
+		{
+			uint8_t v = 0xFF;
+			if (mem->gba->joypad & GBA_BUTTON_A)
+				v &= ~(1 << 0);
+			if (mem->gba->joypad & GBA_BUTTON_B)
+				v &= ~(1 << 1);
+			if (mem->gba->joypad & GBA_BUTTON_SELECT)
+				v &= ~(1 << 2);
+			if (mem->gba->joypad & GBA_BUTTON_START)
+				v &= ~(1 << 3);
+			if (mem->gba->joypad & GBA_BUTTON_RIGHT)
+				v &= ~(1 << 4);
+			if (mem->gba->joypad & GBA_BUTTON_LEFT)
+				v &= ~(1 << 5);
+			if (mem->gba->joypad & GBA_BUTTON_UP)
+				v &= ~(1 << 6);
+			if (mem->gba->joypad & GBA_BUTTON_DOWN)
+				v &= ~(1 << 7);
+			return v;
+		}
+		case MEM_REG_KEYINPUT + 1:
+		{
+			uint8_t v = 0x3;
+			if (mem->gba->joypad & GBA_BUTTON_R)
+				v &= ~(1 << 0);
+			if (mem->gba->joypad & GBA_BUTTON_L)
+				v &= ~(1 << 1);
+			return v;
+		}
 	}
 	return mem->io_regs[reg];
 }
@@ -459,8 +468,6 @@ uint##size##_t mem_get##size(mem_t *mem, uint32_t addr) \
 		case 0x3: /* chip wram */ \
 		{ \
 			uint32_t a = addr & 0x7FFF; \
-			if ((a & 0x7FFC) == 0x7FFC) \
-				printf("get %x to %x\n", a, *(uint##size##_t*)&mem->chip_wram[a]); \
 			return *(uint##size##_t*)&mem->chip_wram[a]; \
 		} \
 		case 0x4: /* registers */ \
@@ -528,8 +535,6 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 		case 0x3: /* chip wram */ \
 		{ \
 			uint32_t a = addr & 0x7FFF; \
-			if ((a & 0x7FFC) == 0x7FFC) \
-				printf("set %x to %x\n", a, v); \
 			*(uint##size##_t*)&mem->chip_wram[a] = v; \
 			return; \
 		} \

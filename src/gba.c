@@ -60,6 +60,7 @@ static void gba_cycle(gba_t *gba)
 void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joypad)
 {
 	//printf("frame\n");
+	gba->joypad = joypad;
 	for (uint8_t y = 0; y < 160; ++y)
 	{
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFC) | 0x0);

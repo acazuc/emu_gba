@@ -1,8 +1,10 @@
 #include "instr.h"
 #include "../cpu.h"
 #include "../mem.h"
+
 #include <stdint.h>
 #include <string.h>
+#include <assert.h>
 #include <stdio.h>
 
 #define THUMB_LSL(v, s) (((s) >= 32) ? 0 : ((v) << (s)))
@@ -50,7 +52,6 @@ static void print_##n##_imm(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n##_imm = \
 { \
-	.name = #n " imm", \
 	.exec = exec_##n##_imm, \
 	.print = print_##n##_imm, \
 }
@@ -122,7 +123,6 @@ static void print_##n##_##v(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n##_##v = \
 { \
-	.name = #n " " #v, \
 	.exec = exec_##n##_##v, \
 	.print = print_##n##_##v, \
 }
@@ -179,7 +179,6 @@ static void print_##n##_i8r##r(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n##_i8r##r = \
 { \
-	.name = #n " i8r" #r, \
 	.exec = exec_##n##_i8r##r, \
 	.print = print_##n##_i8r##r, \
 }
@@ -371,7 +370,6 @@ static void print_alu_##n(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_alu_##n = \
 { \
-	.name = #n, \
 	.exec = exec_alu_##n, \
 	.print = print_alu_##n, \
 }
@@ -455,7 +453,6 @@ static void print_##n(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n = \
 { \
-	.name = #n, \
 	.exec = exec_##n, \
 	.print = print_##n, \
 }
@@ -492,7 +489,6 @@ static void print_bx(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t thumb_bx =
 {
-	.name = "bx",
 	.exec = exec_bx,
 	.print = print_bx,
 };
@@ -515,7 +511,6 @@ static void print_ldrpc_r##r(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_ldrpc_r##r = \
 { \
-	.name = "ldrpc r" #r, \
 	.exec = exec_ldrpc_r##r, \
 	.print = print_ldrpc_r##r, \
 }
@@ -598,7 +593,6 @@ static void print_##n##_reg(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n##_reg = \
 { \
-	.name = #n " reg", \
 	.exec = exec_##n##_reg, \
 	.print = print_##n##_reg, \
 }
@@ -632,7 +626,6 @@ static void print_##n##_imm(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n##_imm = \
 { \
-	.name = #n " imm", \
 	.exec = exec_##n##_imm, \
 	.print = print_##n##_imm, \
 }
@@ -670,7 +663,6 @@ static void print_##n##sp_r##r(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n##sp_r##r = \
 { \
-	.name = #n "sp r" #r, \
 	.exec = exec_##n##sp_r##r, \
 	.print = print_##n##sp_r##r, \
 }
@@ -712,7 +704,6 @@ static void print_add##rr##_r##r(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_add##rr##_r##r = \
 { \
-	.name = "add" #rr " r" #r, \
 	.exec = exec_add##rr##_r##r, \
 	.print = print_add##rr##_r##r, \
 }
@@ -755,7 +746,6 @@ static void print_addsp_imm(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t thumb_addsp_imm =
 {
-	.name = "addsp imm",
 	.exec = exec_addsp_imm,
 	.print = print_addsp_imm,
 };
@@ -928,7 +918,6 @@ static void print_##n####next(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n####next = \
 { \
-	.name = #n, \
 	.exec = exec_##n####next, \
 	.print = print_##n####next, \
 }
@@ -954,9 +943,22 @@ THUMB_PUSHPOP(ldm , _r5, 0, 1, 1, 0, 5);
 THUMB_PUSHPOP(ldm , _r6, 0, 1, 1, 0, 6);
 THUMB_PUSHPOP(ldm , _r7, 0, 1, 1, 0, 7);
 
+static void exec_bkpt(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_bkpt(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "bkpt");
+}
+
 static const cpu_instr_t thumb_bkpt =
 {
-	.name = "bkpt",
+	.exec = exec_bkpt,
+	.print = print_bkpt,
 };
 
 #define THUMB_BRANCH(n, cond) \
@@ -981,7 +983,6 @@ static void print_##n(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t thumb_##n = \
 { \
-	.name = #n, \
 	.exec = exec_##n, \
 	.print = print_##n, \
 }
@@ -1020,7 +1021,6 @@ static void print_swi(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t thumb_swi =
 {
-	.name = "swi",
 	.exec = exec_swi,
 	.print = print_swi,
 };
@@ -1046,7 +1046,6 @@ static void print_b(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t thumb_b =
 {
-	.name = "b",
 	.exec = exec_b,
 	.print = print_b,
 };
@@ -1072,7 +1071,6 @@ static void print_blx_off(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t thumb_blx_off =
 {
-	.name = "blx off",
 	.exec = exec_blx_off,
 	.print = print_blx_off
 };
@@ -1095,7 +1093,6 @@ static void print_bl_setup(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t thumb_bl_setup =
 {
-	.name = "bl setup",
 	.exec = exec_bl_setup,
 	.print = print_bl_setup,
 };
@@ -1119,14 +1116,26 @@ static void print_bl_off(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t thumb_bl_off =
 {
-	.name = "bl off",
 	.exec = exec_bl_off,
 	.print = print_bl_off,
 };
 
+static void exec_undef(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_undef(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "undef");
+}
+
 static const cpu_instr_t thumb_undef =
 {
-	.name = "undef",
+	.exec = exec_undef,
+	.print = print_undef,
 };
 
 #define REPEAT1(v) &thumb_##v

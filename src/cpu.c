@@ -73,14 +73,15 @@ static bool check_arm_cond(cpu_t *cpu, uint32_t cond)
 
 static void print_instr(cpu_t *cpu, const char *msg, const cpu_instr_t *instr)
 {
-	char tmp[1024];
+	char tmp[1024] = "";
 
 	if ((cpu->debug & CPU_DEBUG_INSTR) && instr->print)
-		instr->print(cpu, tmp, sizeof(tmp));
-	else
-		snprintf(tmp, sizeof(tmp), "%s", instr->name);
+	{
+		tmp[0] = ' ';
+		instr->print(cpu, tmp + 1, sizeof(tmp) - 1);
+	}
 
-	printf("[%-4s] [%08x] [%08x] [%08x] %s\n",
+	printf("[%-4s] [%08x] [%08x] [%08x]%s\n",
 	        msg,
 	        cpu->regs.cpsr,
 	        *cpu->regs.spsr,
@@ -211,7 +212,7 @@ static bool decode_instruction(cpu_t *cpu)
 void cpu_cycle(cpu_t *cpu)
 {
 	//if (cpu_get_reg(cpu, CPU_REG_PC) >= 0x4000)
-	//	cpu->debug = CPU_DEBUG_INSTR | CPU_DEBUG_REGS | CPU_DEBUG_REGS_ML;
+	//	cpu->debug = CPU_DEBUG_REGS | CPU_DEBUG_INSTR;
 	//if (cpu_get_reg(cpu, CPU_REG_PC) == 0x872)
 	//	cpu->debug = 0;
 

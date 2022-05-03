@@ -31,6 +31,7 @@ typedef struct gba_s
 	apu_t *apu;
 	cpu_t *cpu;
 	gpu_t *gpu;
+	uint32_t joypad;
 	uint32_t cycle;
 } gba_t;
 

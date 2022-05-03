@@ -1,8 +1,10 @@
 #include "instr.h"
 #include "../cpu.h"
 #include "../mem.h"
+
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <stdio.h>
 
 #define ARM_LSL(v, s) (((s) >= 32) ? 0 : ((v) << (s)))
@@ -293,7 +295,6 @@ static void print_##op##_##rot##i(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_##op##_##rot##i = \
 { \
-	.name = #op " " #rot "i", \
 	.exec = exec_##op##_##rot##i, \
 	.print = print_##op##_##rot##i, \
 }; \
@@ -320,7 +321,6 @@ static void print_##op##_##rot##r(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_##op##_##rot##r = \
 { \
-	.name = #op " " #rot "r", \
 	.exec = exec_##op##_##rot##r, \
 	.print = print_##op##_##rot##r, \
 };\
@@ -408,7 +408,6 @@ static void print_##op##_imm(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_##op##_imm = \
 { \
-	.name = #op " imm", \
 	.exec = exec_##op##_imm, \
 	.print = print_##op##_imm, \
 };
@@ -433,8 +432,6 @@ ARM_ALU_OPS(orr, 1, 1);
 ARM_ALU_OPS(mov, 1, 1);
 ARM_ALU_OPS(bic, 1, 1);
 ARM_ALU_OPS(mvn, 1, 1);
-
-#include <assert.h>
 
 #define MULOP(n, wmod, rs_lower_upper, rm_lower_upper, halfword, signed_unsigned, longword, accum, setcond) \
 static void exec_##n(cpu_t *cpu) \
@@ -523,7 +520,6 @@ static void print_##n(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_##n = \
 { \
-	.name = #n, \
 	.exec = exec_##n, \
 	.print = print_##n, \
 }
@@ -665,7 +661,6 @@ static void print_##opname##_##oparg####rotname(cpu_t *cpu, char *data, size_t s
 } \
 static const cpu_instr_t arm_##opname##_##oparg####rotname = \
 { \
-	.name = #opname " " #oparg #rotname, \
 	.exec = exec_##opname##_##oparg####rotname, \
 	.print = print_##opname##_##oparg####rotname, \
 }
@@ -777,7 +772,6 @@ static void print_##opname##_##oparg(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_##opname##_##oparg = \
 { \
-	.name = #opname " " #oparg, \
 	.exec = exec_##opname##_##oparg, \
 	.print = print_##opname##_##oparg, \
 }
@@ -1046,7 +1040,6 @@ static void print_##opname####oparg(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_##opname####oparg = \
 { \
-	.name = #opname #oparg, \
 	.exec = exec_##opname####oparg, \
 	.print = print_##opname####oparg, \
 }
@@ -1085,13 +1078,35 @@ STLDM(ldmia, _uw, 0, 1, 1, 1, 1);
 STLDM(ldmib, _uw, 1, 1, 1, 1, 1);
 
 #define STLDC(v) \
+static void exec_stc_##v(cpu_t *cpu) \
+{ \
+	(void)cpu; \
+	assert(!"unimp"); \
+} \
+static void print_stc_##v(cpu_t *cpu, char *data, size_t size) \
+{ \
+	(void)cpu; \
+	snprintf(data, size, "stc " #v); \
+} \
 static const cpu_instr_t arm_stc_##v = \
 { \
-	.name = "stc " #v, \
+	.exec = exec_stc_##v, \
+	.print = print_stc_##v, \
 }; \
+static void exec_ldc_##v(cpu_t *cpu) \
+{ \
+	(void)cpu; \
+	assert(!"unimp"); \
+} \
+static void print_ldc_##v(cpu_t *cpu, char *data, size_t size) \
+{ \
+	(void)cpu; \
+	snprintf(data, size, "ldc " #v); \
+} \
 static const cpu_instr_t arm_ldc_##v = \
 { \
-	.name = "ldc " #v, \
+	.exec = exec_ldc_##v, \
+	.print = print_ldc_##v, \
 };
 
 STLDC(ofm);
@@ -1127,14 +1142,26 @@ static void print_clz(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t arm_clz =
 {
-	.name = "clz",
 	.exec = exec_clz,
 	.print = print_clz,
 };
 
+static void exec_bkpt(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_bkpt(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "bkpt");
+}
+
 static const cpu_instr_t arm_bkpt =
 {
-	.name = "bkpt",
+	.exec = exec_bkpt,
+	.print = print_bkpt,
 };
 
 #define ARM_MRS(n, psr) \
@@ -1157,7 +1184,6 @@ static void print_mrs_##n(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_mrs_##n = \
 { \
-	.name = "mrs " #n, \
 	.exec = exec_mrs_##n, \
 	.print = print_mrs_##n, \
 }
@@ -1218,7 +1244,6 @@ static void print_msr_##n(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_msr_##n = \
 { \
-	.name = "msr " #n, \
 	.exec = exec_msr_##n, \
 	.print = print_msr_##n, \
 }
@@ -1228,24 +1253,76 @@ ARM_MSR(rs, 0, 1);
 ARM_MSR(ic, 1, 0);
 ARM_MSR(is, 1, 1);
 
+static void exec_qadd(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_qadd(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "qadd");
+}
+
 static const cpu_instr_t arm_qadd =
 {
-	.name = "qadd",
+	.exec = exec_qadd,
+	.print = print_qadd,
 };
+
+static void exec_qsub(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_qsub(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "qsub");
+}
 
 static const cpu_instr_t arm_qsub =
 {
-	.name = "qsub",
+	.exec = exec_qsub,
+	.print = print_qsub,
 };
+
+static void exec_qdadd(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_qdadd(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "qdadd");
+}
 
 static const cpu_instr_t arm_qdadd =
 {
-	.name = "qdadd",
+	.exec = exec_qdadd,
+	.print = print_qdadd,
 };
+
+static void exec_qdsub(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_qdsub(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "qdsub");
+}
 
 static const cpu_instr_t arm_qdsub =
 {
-	.name = "qdsub",
+	.exec = exec_qdsub,
+	.print = print_qdsub,
 };
 
 #define ARM_SWP(n, word_byte) \
@@ -1279,7 +1356,6 @@ static void print_##n(cpu_t *cpu, char *data, size_t size) \
 } \
 static const cpu_instr_t arm_##n = \
 { \
-	.name = #n, \
 	.exec = exec_##n, \
 	.print = print_##n, \
 }
@@ -1306,7 +1382,6 @@ static void print_b(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t arm_b =
 {
-	.name = "b",
 	.exec = exec_b,
 	.print = print_b,
 };
@@ -1331,7 +1406,6 @@ static void print_bl(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t arm_bl =
 {
-	.name = "bl",
 	.exec = exec_bl,
 	.print = print_bl,
 };
@@ -1352,7 +1426,6 @@ static void print_bx(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t arm_bx =
 {
-	.name = "bx",
 	.exec = exec_bx,
 	.print = print_bx,
 };
@@ -1374,24 +1447,62 @@ static void print_blx(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t arm_blx =
 {
-	.name = "blx",
 	.exec = exec_blx,
 	.print = print_blx,
 };
 
+static void exec_cdp(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_cdp(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "cdp");
+}
+
 static const cpu_instr_t arm_cdp =
 {
-	.name = "cdp",
+	.exec = exec_cdp,
+	.print = print_cdp,
 };
+
+static void exec_mcr(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_mcr(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "mcr");
+}
 
 static const cpu_instr_t arm_mcr =
 {
-	.name = "mcr",
+	.exec = exec_mcr,
+	.print = print_mcr,
 };
+
+static void exec_mrc(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_mrc(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "mrc");
+}
 
 static const cpu_instr_t arm_mrc =
 {
-	.name = "mrc",
+	.exec = exec_mrc,
+	.print = print_mrc,
 };
 
 static void exec_swi(cpu_t *cpu)
@@ -1413,14 +1524,26 @@ static void print_swi(cpu_t *cpu, char *data, size_t size)
 
 static const cpu_instr_t arm_swi =
 {
-	.name = "swi",
 	.exec = exec_swi,
 	.print = print_swi,
 };
 
+static void exec_undef(cpu_t *cpu)
+{
+	(void)cpu;
+	assert(!"unimp");
+}
+
+static void print_undef(cpu_t *cpu, char *data, size_t size)
+{
+	(void)cpu;
+	snprintf(data, size, "undef");
+}
+
 static const cpu_instr_t arm_undef =
 {
-	.name = "undef",
+	.exec = exec_undef,
+	.print = print_undef,
 };
 
 #define REPEAT1(v) &arm_##v

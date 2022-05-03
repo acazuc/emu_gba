@@ -86,6 +86,24 @@
 #define MEM_REG_TM3CNT_L    0x10C
 #define MEM_REG_TM3CNT_H    0x10E
 
+#define MEM_REG_SIODATA32   0x120
+#define MEM_REG_SIOMULTI0   0x120
+#define MEM_REG_SIOMULTI1   0x122
+#define MEM_REG_SIOMULTI2   0x124
+#define MEM_REG_SIOMULTI3   0x126
+#define MEM_REG_SIOCNT      0x128
+#define MEM_REG_SIOMLT_SEND 0x12A
+#define MEM_REG_SIODATA8    0x12A
+
+#define MEM_REG_KEYINPUT    0x130
+#define MEM_REG_KEYCNT      0x132
+
+#define MEM_REG_RCNT        0x134
+#define MEM_REG_JOYCNT      0x140
+#define MEM_REG_JOY_RECV    0x150
+#define MEM_REG_JOY_TRANS   0x154
+#define MEM_REG_JOYSTAT     0x158
+
 #define MEM_REG_IE          0x200
 #define MEM_REG_IF          0x202
 #define MEM_REG_WAITCNT     0x204
