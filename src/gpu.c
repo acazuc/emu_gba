@@ -27,8 +27,8 @@ void gpu_del(gpu_t *gpu)
 static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *data)
 {
 	uint16_t bgcnt = mem_get_reg16(gpu->mem, MEM_REG_BG0CNT + bg * 2);
-	uint8_t bghofs = mem_get_reg16(gpu->mem, MEM_REG_BG0HOFS + bg * 4) & 0xFF;
-	uint8_t bgvofs = mem_get_reg16(gpu->mem, MEM_REG_BG0VOFS + bg * 4) & 0xFF;
+	uint8_t bghofs = mem_get_reg16(gpu->mem, MEM_REG_BG0HOFS + bg * 4) & 0x1FF;
+	uint8_t bgvofs = mem_get_reg16(gpu->mem, MEM_REG_BG0VOFS + bg * 4) & 0x1FF;
 	uint8_t size = (bgcnt >> 14) & 0x3;
 	uint32_t tilebase = ((bgcnt >> 2) & 0x3) * 0x4000;
 	uint32_t mapbase = ((bgcnt >> 8) & 0x1F) * 0x800;
@@ -53,25 +53,23 @@ static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *da
 		uint32_t mapy = diffy / 8;
 		uint32_t mapaddr = mapbase + (mapx + mapy * 32) * 2;
 		uint16_t map = mem_get_vram16(gpu->mem, mapaddr);
-		uint16_t tileid = map & 0x3FF;
+		uint32_t tileid = map & 0x3FF;
 		uint32_t tilex = diffx % 8;
 		uint32_t tiley = diffy % 8;
 		if (map & (1 << 10))
 			tilex = 7 - tilex;
 		if (map & (1 << 11))
 			tiley = 7 - tiley;
+		uint8_t paladdr;
 		uint16_t tileaddr = tilebase;
 		if (bgcnt & (1 << 7))
-			tileaddr += tileid * 0x40;
-		else
-			tileaddr += tileid * 0x20;
-		uint8_t paladdr;
-		if (bgcnt & (1 << 7))
 		{
+			tileaddr += tileid * 0x40;
 			paladdr = mem_get_vram8(gpu->mem, tileaddr + tilex + tiley * 8);
 		}
 		else
 		{
+			tileaddr += tileid * 0x20;
 			if (tilex & 1)
 				paladdr = mem_get_vram8(gpu->mem, tileaddr + tilex / 2 + tiley * 4) >> 4;
 			else
@@ -100,8 +98,8 @@ static void draw_background_bitmap_3(gpu_t *gpu, uint8_t y, uint8_t *data)
 	uint16_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD);
 	uint32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X);
 	uint32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y);
-	uint16_t hofs = mem_get_reg32(gpu->mem, MEM_REG_BG2HOFS);
-	uint16_t vofs = mem_get_reg32(gpu->mem, MEM_REG_BG2VOFS);
+	uint16_t hofs = mem_get_reg32(gpu->mem, MEM_REG_BG2HOFS) & 0x1FF;
+	uint16_t vofs = mem_get_reg32(gpu->mem, MEM_REG_BG2VOFS) & 0x1FF;
 	for (size_t x = 0; x < 240; ++x)
 	{
 		int32_t dx = x - bgx;
@@ -129,8 +127,8 @@ static void draw_background_bitmap_4(gpu_t *gpu, uint8_t y, uint8_t *data)
 	uint16_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD);
 	uint32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X);
 	uint32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y);
-	uint16_t hofs = mem_get_reg32(gpu->mem, MEM_REG_BG2HOFS);
-	uint16_t vofs = mem_get_reg32(gpu->mem, MEM_REG_BG2VOFS);
+	uint16_t hofs = mem_get_reg32(gpu->mem, MEM_REG_BG2HOFS) & 0x1FF;
+	uint16_t vofs = mem_get_reg32(gpu->mem, MEM_REG_BG2VOFS) & 0x1FF;
 	uint16_t dispcnt = mem_get_reg16(gpu->mem, MEM_REG_DISPCNT);
 	uint32_t addr_offset = (dispcnt & (1 << 4)) ? 0xA000 : 0;
 	for (size_t x = 0; x < 240; ++x)
@@ -353,7 +351,6 @@ static void draw_window_obj(gpu_t *gpu, uint8_t y)
 
 static void draw_mode0(gpu_t *gpu, uint8_t y)
 {
-	//printf("unsupported mode 0\n");
 	uint8_t bg0_data[240 * 4];
 	uint8_t bg1_data[240 * 4];
 	uint8_t bg2_data[240 * 4];
@@ -365,12 +362,12 @@ static void draw_mode0(gpu_t *gpu, uint8_t y)
 	memset(bg3_data, 0, sizeof(bg3_data));
 	memset(obj_data, 0, sizeof(obj_data));
 	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
-	if (display & (1 << 0x8))
-		draw_background_tiled(gpu, y, 0, bg0_data);
-	if (display & (1 << 0x9))
-		draw_background_tiled(gpu, y, 1, bg1_data);
-	if (display & (1 << 0xA))
-		draw_background_tiled(gpu, y, 2, bg2_data);
+	//if (display & (1 << 0x8))
+	//	draw_background_tiled(gpu, y, 0, bg0_data);
+	//if (display & (1 << 0x9))
+	//	draw_background_tiled(gpu, y, 1, bg1_data);
+	//if (display & (1 << 0xA))
+	//	draw_background_tiled(gpu, y, 2, bg2_data);
 	if (display & (1 << 0xB))
 		draw_background_tiled(gpu, y, 3, bg3_data);
 	if (display & (1 << 0xC))
@@ -384,12 +381,12 @@ static void draw_mode0(gpu_t *gpu, uint8_t y)
 		//XXX: bg priority
 		if (bg3_data[x * 4 + 3])
 			memcpy(&gpu->data[(y * 240 + x) * 4], &bg3_data[x * 4], 3);
-		if (bg2_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg2_data[x * 4], 3);
-		if (bg1_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg1_data[x * 4], 3);
-		if (bg0_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg0_data[x * 4], 3);
+		//if (bg2_data[x * 4 + 3])
+		//	memcpy(&gpu->data[(y * 240 + x) * 4], &bg2_data[x * 4], 3);
+		//if (bg1_data[x * 4 + 3])
+		//	memcpy(&gpu->data[(y * 240 + x) * 4], &bg1_data[x * 4], 3);
+		//if (bg0_data[x * 4 + 3])
+		//	memcpy(&gpu->data[(y * 240 + x) * 4], &bg0_data[x * 4], 3);
 		if (obj_data[x * 4 + 3])
 			memcpy(&gpu->data[(y * 240 + x) * 4], &obj_data[x * 4], 3);
 	}
@@ -397,12 +394,10 @@ static void draw_mode0(gpu_t *gpu, uint8_t y)
 
 static void draw_mode1(gpu_t *gpu, uint8_t y)
 {
-	//printf("unsupported mode 1\n");
 }
 
 static void draw_mode2(gpu_t *gpu, uint8_t y)
 {
-	//printf("unsupported mode 2\n");
 	uint8_t bg2_data[240 * 4];
 	uint8_t bg3_data[240 * 4];
 	uint8_t obj_data[240 * 4];
@@ -436,7 +431,6 @@ static void draw_mode2(gpu_t *gpu, uint8_t y)
 
 static void draw_mode3(gpu_t *gpu, uint8_t y)
 {
-	//printf("unsupported mode 3\n");
 	uint8_t bg2_data[240 * 4];
 	uint8_t obj_data[240 * 4];
 	memset(bg2_data, 0, sizeof(bg2_data));
@@ -463,7 +457,6 @@ static void draw_mode3(gpu_t *gpu, uint8_t y)
 
 static void draw_mode4(gpu_t *gpu, uint8_t y)
 {
-	//printf("unsupported mode 4\n");
 	uint8_t bg2_data[240 * 4];
 	uint8_t obj_data[240 * 4];
 	memset(bg2_data, 0, sizeof(bg2_data));
@@ -490,7 +483,6 @@ static void draw_mode4(gpu_t *gpu, uint8_t y)
 
 static void draw_mode5(gpu_t *gpu, uint8_t y)
 {
-	//printf("unsupported mode 5\n");
 	uint8_t bg2_data[240 * 4];
 	uint8_t obj_data[240 * 4];
 	memset(bg2_data, 0, sizeof(bg2_data));
@@ -528,6 +520,8 @@ void gpu_draw(gpu_t *gpu, uint8_t y)
 	for (size_t x = 0; x < 240; ++x)
 		memcpy(&gpu->data[(240 * y + x) * 4], bg_color, 4);
 	uint16_t display = mem_get_reg16(gpu->mem, MEM_REG_DISPCNT);
+	if (0)
+		printf("display: %d\n", display & 0x7);
 	switch (display & 0x7)
 	{
 		case 0:
