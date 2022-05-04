@@ -32,6 +32,7 @@ static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *da
 	uint8_t size = (bgcnt >> 14) & 0x3;
 	uint32_t tilebase = ((bgcnt >> 2) & 0x3) * 0x4000;
 	uint32_t mapbase = ((bgcnt >> 8) & 0x1F) * 0x800;
+	printf("layer %d cnt: %x\n", bg, bgcnt);
 	uint32_t mapw;
 	uint32_t maph;
 	if (bg == 0)
@@ -356,18 +357,29 @@ static void draw_mode0(gpu_t *gpu, uint8_t y)
 	uint8_t bg2_data[240 * 4];
 	uint8_t bg3_data[240 * 4];
 	uint8_t obj_data[240 * 4];
+	uint8_t *bg_data[4] = {&bg0_data[0], &bg1_data[0], &bg2_data[0], &bg3_data[0]};
 	memset(bg0_data, 0, sizeof(bg0_data));
 	memset(bg1_data, 0, sizeof(bg1_data));
 	memset(bg2_data, 0, sizeof(bg2_data));
 	memset(bg3_data, 0, sizeof(bg3_data));
 	memset(obj_data, 0, sizeof(obj_data));
+	uint8_t bg_prio[4];
+	uint8_t bg_prio_cnt = 0;
+	for (size_t i = 0; i < 4; ++i)
+	{
+		for (size_t j = 0; j < 4; ++j)
+		{
+			if ((mem_get_reg16(gpu->mem, MEM_REG_BG0CNT + 2 * j) & 3) == i)
+				bg_prio[bg_prio_cnt++] = j;
+		}
+	}
 	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
-	//if (display & (1 << 0x8))
-	//	draw_background_tiled(gpu, y, 0, bg0_data);
-	//if (display & (1 << 0x9))
-	//	draw_background_tiled(gpu, y, 1, bg1_data);
-	//if (display & (1 << 0xA))
-	//	draw_background_tiled(gpu, y, 2, bg2_data);
+	if (display & (1 << 0x8))
+		draw_background_tiled(gpu, y, 0, bg0_data);
+	if (display & (1 << 0x9))
+		draw_background_tiled(gpu, y, 1, bg1_data);
+	if (display & (1 << 0xA))
+		draw_background_tiled(gpu, y, 2, bg2_data);
 	if (display & (1 << 0xB))
 		draw_background_tiled(gpu, y, 3, bg3_data);
 	if (display & (1 << 0xC))
@@ -378,15 +390,14 @@ static void draw_mode0(gpu_t *gpu, uint8_t y)
 		draw_window(gpu, y, 1);
 	for (size_t x = 0; x < 240; ++x)
 	{
-		//XXX: bg priority
-		if (bg3_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg3_data[x * 4], 3);
-		//if (bg2_data[x * 4 + 3])
-		//	memcpy(&gpu->data[(y * 240 + x) * 4], &bg2_data[x * 4], 3);
-		//if (bg1_data[x * 4 + 3])
-		//	memcpy(&gpu->data[(y * 240 + x) * 4], &bg1_data[x * 4], 3);
-		//if (bg0_data[x * 4 + 3])
-		//	memcpy(&gpu->data[(y * 240 + x) * 4], &bg0_data[x * 4], 3);
+		for (size_t i = 0; i < 4; ++i)
+		{
+			if (bg_data[i][x * 4 + 3])
+			{
+				memcpy(&gpu->data[(y * 240 + x) * 4], &bg3_data[x * 4], 3);
+				break;
+			}
+		}
 		if (obj_data[x * 4 + 3])
 			memcpy(&gpu->data[(y * 240 + x) * 4], &obj_data[x * 4], 3);
 	}
