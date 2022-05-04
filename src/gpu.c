@@ -26,30 +26,20 @@ void gpu_del(gpu_t *gpu)
 
 static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *data)
 {
+	static const uint32_t mapwidths[]  = {32, 64, 32, 64};
+	static const uint32_t mapheights[] = {32, 32, 64, 64};
 	uint16_t bgcnt = mem_get_reg16(gpu->mem, MEM_REG_BG0CNT + bg * 2);
 	uint8_t bghofs = mem_get_reg16(gpu->mem, MEM_REG_BG0HOFS + bg * 4) & 0x1FF;
 	uint8_t bgvofs = mem_get_reg16(gpu->mem, MEM_REG_BG0VOFS + bg * 4) & 0x1FF;
 	uint8_t size = (bgcnt >> 14) & 0x3;
 	uint32_t tilebase = ((bgcnt >> 2) & 0x3) * 0x4000;
 	uint32_t mapbase = ((bgcnt >> 8) & 0x1F) * 0x800;
-	printf("layer %d cnt: %x\n", bg, bgcnt);
-	uint32_t mapw;
-	uint32_t maph;
-	if (bg == 0)
-	{
-		mapw = 32;
-		maph = 32;
-	}
-	else
-	{
-		static const uint32_t mapsizes[] = {16, 32, 64, 128};
-		mapw = mapsizes[size];
-		maph = mapsizes[size];
-	}
+	uint32_t mapw = mapwidths[size];
+	uint32_t maph = mapheights[size];
 	for (size_t x = 0; x < 240; ++x)
 	{
-		uint32_t diffx = x + bghofs;
-		uint32_t diffy = y + bgvofs;
+		uint32_t diffx = (x + bghofs) % (mapw * 8);
+		uint32_t diffy = (y + bgvofs) % (maph * 8);
 		uint32_t mapx = diffx / 8;
 		uint32_t mapy = diffy / 8;
 		uint32_t mapaddr = mapbase + (mapx + mapy * 32) * 2;
@@ -78,6 +68,8 @@ static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *da
 			paladdr += ((map >> 12) & 0xF) * 0x10;
 		}
 		uint16_t val = mem_get_bg_palette(gpu->mem, paladdr * 2);
+		if (!val)
+			continue;
 		uint8_t color[4] =
 		{
 			TO8((val >> 0xA) & 0x1F),
@@ -87,8 +79,6 @@ static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *da
 		};
 		memcpy(&data[x * 4], color, 4);
 	}
-	(void)y;
-	(void)bg;
 }
 
 static void draw_background_bitmap_3(gpu_t *gpu, uint8_t y, uint8_t *data)
@@ -99,8 +89,6 @@ static void draw_background_bitmap_3(gpu_t *gpu, uint8_t y, uint8_t *data)
 	uint16_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD);
 	uint32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X);
 	uint32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y);
-	uint16_t hofs = mem_get_reg32(gpu->mem, MEM_REG_BG2HOFS) & 0x1FF;
-	uint16_t vofs = mem_get_reg32(gpu->mem, MEM_REG_BG2VOFS) & 0x1FF;
 	for (size_t x = 0; x < 240; ++x)
 	{
 		int32_t dx = x - bgx;
@@ -128,8 +116,6 @@ static void draw_background_bitmap_4(gpu_t *gpu, uint8_t y, uint8_t *data)
 	uint16_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD);
 	uint32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X);
 	uint32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y);
-	uint16_t hofs = mem_get_reg32(gpu->mem, MEM_REG_BG2HOFS) & 0x1FF;
-	uint16_t vofs = mem_get_reg32(gpu->mem, MEM_REG_BG2VOFS) & 0x1FF;
 	uint16_t dispcnt = mem_get_reg16(gpu->mem, MEM_REG_DISPCNT);
 	uint32_t addr_offset = (dispcnt & (1 << 4)) ? 0xA000 : 0;
 	for (size_t x = 0; x < 240; ++x)
@@ -211,6 +197,10 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 	uint16_t bldalpha = mem_get_reg16(gpu->mem, MEM_REG_BLDALPHA);
 	uint32_t eva = (bldalpha >> 0) & 0x1F;
 	uint32_t evb = (bldalpha >> 8) & 0x1F;
+	if (eva >= 0x10)
+		eva = 0x10;
+	if (evb >= 0x10)
+		evb = 0x10;
 
 	for (int16_t i = 128; i >= 0; --i)
 	{
@@ -318,7 +308,7 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 				tilepos &= 0x3FF;
 				uint32_t tilea = tileaddr + tilepos * 0x40 + tileby * 0x8 + tilebx;
 				uint8_t tilev = mem_get_vram8(gpu->mem, tilea);
-				if (!tilev) //XXX
+				if (!tilev)
 					continue;
 				uint16_t col = mem_get_obj_palette(gpu->mem, tilev * 2);
 				uint8_t color[4] =
@@ -330,7 +320,7 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 				};
 				/*if (written[screenx])
 				{
-					uint8_t *cur = &gpu->data[(240 * y + screenx) * 4];
+					uint8_t *cur = &data[screenx * 4];
 					color[0] = ((color[0] * eva) >> 4) + ((cur[0] * evb) >> 4);
 					color[1] = ((color[1] * eva) >> 4) + ((cur[1] * evb) >> 4);
 					color[2] = ((color[2] * eva) >> 4) + ((cur[2] * evb) >> 4);
