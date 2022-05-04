@@ -1,15 +1,10 @@
 #include "cpu.h"
 #include "mem.h"
 #include "cpu/instr.h"
+
 #include <stdlib.h>
 #include <assert.h>
 #include <stdio.h>
-
-#define CPU_DEBUG_BASE    (1 << 0) /* print instr name */
-#define CPU_DEBUG_INSTR   (1 << 1) /* print disassembled instruction */
-#define CPU_DEBUG_REGS    (1 << 2) /* print registers */
-#define CPU_DEBUG_REGS_ML (1 << 3) /* multiline registers dump */
-#define CPU_DEBUG_ALL     (CPU_DEBUG_BASE | CPU_DEBUG_INSTR | CPU_DEBUG_REGS)
 
 cpu_t *cpu_new(mem_t *mem)
 {
@@ -171,7 +166,7 @@ static bool handle_interrupt(cpu_t *cpu)
 		}
 		else
 		{
-			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 8);
+			cpu_set_reg(cpu, CPU_REG_LR, cpu_get_reg(cpu, CPU_REG_PC) + 4);
 		}
 		cpu_set_reg(cpu, CPU_REG_PC, 0x18);
 		return true;

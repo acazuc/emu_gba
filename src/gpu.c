@@ -202,7 +202,7 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 	if (evb >= 0x10)
 		evb = 0x10;
 
-	for (int16_t i = 128; i >= 0; --i)
+	for (int16_t i = 127; i >= 0; --i)
 	{
 		uint16_t attr0 = mem_get_oam16(gpu->mem, i * 8);
 		if ((attr0 & 0x300) == 0x200) //disable flag

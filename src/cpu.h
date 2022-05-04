@@ -7,6 +7,12 @@
 typedef struct cpu_instr_s cpu_instr_t;
 typedef struct mem_s mem_t;
 
+#define CPU_DEBUG_BASE    (1 << 0) /* print instr name */
+#define CPU_DEBUG_INSTR   (1 << 1) /* print disassembled instruction */
+#define CPU_DEBUG_REGS    (1 << 2) /* print registers */
+#define CPU_DEBUG_REGS_ML (1 << 3) /* multiline registers dump */
+#define CPU_DEBUG_ALL     (CPU_DEBUG_BASE | CPU_DEBUG_INSTR | CPU_DEBUG_REGS)
+
 #define CPU_FLAG_N (1 << 31)
 #define CPU_FLAG_Z (1 << 30)
 #define CPU_FLAG_C (1 << 29)

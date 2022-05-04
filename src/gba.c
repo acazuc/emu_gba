@@ -52,9 +52,10 @@ void gba_del(gba_t *gba)
 static void gba_cycle(gba_t *gba)
 {
 	gba->cycle++;
-	mem_dma(gba->mem);
+	bool has_dma = mem_dma(gba->mem);
 	mem_timers(gba->mem);
-	cpu_cycle(gba->cpu);
+	if (!has_dma)
+		cpu_cycle(gba->cpu);
 }
 
 void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joypad)

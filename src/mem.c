@@ -2,6 +2,7 @@
 #include "mbc.h"
 #include "gba.h"
 #include "cpu.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -57,7 +58,7 @@ void mem_timers(mem_t *mem)
 	}
 }
 
-void mem_dma(mem_t *mem)
+bool mem_dma(mem_t *mem)
 {
 	for (size_t i = 0; i < 4; ++i)
 	{
@@ -111,7 +112,9 @@ void mem_dma(mem_t *mem)
 			if (cnt_h & (1 << 14))
 				mem_set_reg16(mem, MEM_REG_IF, mem_get_reg16(mem, MEM_REG_IF) | (1 << (8 + i)));
 		}
+		return true;
 	}
+	return false;
 }
 
 static void dma_control(mem_t *mem, uint8_t dma)
@@ -503,7 +506,7 @@ uint##size##_t mem_get##size(mem_t *mem, uint32_t addr) \
 			return mbc_get##size(mem->mbc, addr); \
 	} \
 end: \
-	printf("unknown get" #size " addr: %08x\n", addr); \
+	printf("[%08x] unknown get" #size " addr: %08x\n", cpu_get_reg(mem->gba->cpu, CPU_REG_PC), addr); \
 	return 0; \
 }
 
@@ -576,7 +579,7 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 			return; \
 	} \
 end: \
-	printf("unknown set" #size " addr: %08x\n", addr); \
+	printf("[%08x] unknown set" #size " addr: %08x\n", cpu_get_reg(mem->gba->cpu, CPU_REG_PC), addr); \
 }
 
 MEM_SET(8);

@@ -146,7 +146,7 @@ mem_t *mem_new(gba_t *gba, mbc_t *mbc);
 void mem_del(mem_t *mem);
 
 void mem_timers(mem_t *mem);
-void mem_dma(mem_t *mem);
+bool mem_dma(mem_t *mem);
 
 uint8_t  mem_get8 (mem_t *mem, uint32_t addr);
 uint16_t mem_get16(mem_t *mem, uint32_t addr);
