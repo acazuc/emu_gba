@@ -7,6 +7,18 @@
 
 #define TO8(v) (((uint32_t)(v) * 527 + 23) >> 6)
 
+typedef struct line_buff_s
+{
+	uint8_t bg0[240 * 4];
+	uint8_t bg1[240 * 4];
+	uint8_t bg2[240 * 4];
+	uint8_t bg3[240 * 4];
+	uint8_t obj[240 * 4];
+	uint8_t wn0[240 * 4];
+	uint8_t wn1[240 * 4];
+	uint8_t wno[240 * 4];
+} line_buff_t;
+
 gpu_t *gpu_new(mem_t *mem)
 {
 	gpu_t *gpu = calloc(sizeof(*gpu), 1);
@@ -57,6 +69,8 @@ static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *da
 		{
 			tileaddr += tileid * 0x40;
 			paladdr = mem_get_vram8(gpu->mem, tileaddr + tilex + tiley * 8);
+			if (!paladdr)
+				continue;
 		}
 		else
 		{
@@ -65,11 +79,11 @@ static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *da
 				paladdr = mem_get_vram8(gpu->mem, tileaddr + tilex / 2 + tiley * 4) >> 4;
 			else
 				paladdr = mem_get_vram8(gpu->mem, tileaddr + tilex / 2 + tiley * 4) & 0xF;
+			if (!paladdr)
+				continue;
 			paladdr += ((map >> 12) & 0xF) * 0x10;
 		}
 		uint16_t val = mem_get_bg_palette(gpu->mem, paladdr * 2);
-		if (!val)
-			continue;
 		uint8_t color[4] =
 		{
 			TO8((val >> 0xA) & 0x1F),
@@ -142,9 +156,40 @@ static void draw_background_bitmap_4(gpu_t *gpu, uint8_t y, uint8_t *data)
 
 static void draw_background_bitmap_5(gpu_t *gpu, uint8_t y, uint8_t *data)
 {
+	if (y < 16 || y > 143)
+	{
+		memset(&data[0], 0, 4 * 240);
+		return;
+	}
+	memset(&data[0], 0, 4 * 40);
+	memset(&data[200 * 4], 0, 4 * 40);
+	uint16_t pa = mem_get_reg16(gpu->mem, MEM_REG_BG2PA);
+	uint16_t pb = mem_get_reg16(gpu->mem, MEM_REG_BG2PB);
+	uint16_t pc = mem_get_reg16(gpu->mem, MEM_REG_BG2PC);
+	uint16_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD);
+	uint32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X);
+	uint32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y);
+	uint8_t baseaddr = (mem_get_reg32(gpu->mem, MEM_REG_DISPCNT) & (1 << 4)) ? 0xA000 : 0;
+	for (size_t x = 0; x < 160; ++x)
+	{
+		int32_t dx = x - bgx;
+		int32_t dy = y - bgy;
+		uint32_t vx = ((pa * dx + pb * dy) >> 8) + bgx;
+		uint32_t vy = ((pc * dx + pd * dy) >> 8) + bgy;
+		uint32_t addr = baseaddr + 2 * (x + 160 * y);
+		uint16_t val = mem_get_vram16(gpu->mem, addr);
+		uint8_t color[4] =
+		{
+			TO8((val >> 0xA) & 0x1F),
+			TO8((val >> 0x5) & 0x1F),
+			TO8((val >> 0x0) & 0x1F),
+			0xFF,
+		};
+		memcpy(&data[(40 + x) * 4], color, 4);
+	}
 }
 
-static void draw_window(gpu_t *gpu, uint8_t y, uint8_t win)
+static void draw_window(gpu_t *gpu, uint8_t y, uint8_t win, uint8_t *data)
 {
 	(void)gpu;
 	(void)y;
@@ -193,14 +238,6 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 	return;
 #endif
 
-	uint8_t written[240] = {0};
-	uint16_t bldalpha = mem_get_reg16(gpu->mem, MEM_REG_BLDALPHA);
-	uint32_t eva = (bldalpha >> 0) & 0x1F;
-	uint32_t evb = (bldalpha >> 8) & 0x1F;
-	if (eva >= 0x10)
-		eva = 0x10;
-	if (evb >= 0x10)
-		evb = 0x10;
 
 	for (int16_t i = 127; i >= 0; --i)
 	{
@@ -252,7 +289,6 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 		uint16_t tileid = attr2 & 0x3FF;
 		uint8_t mode = (attr0 >> 10) & 0x3;
 		uint8_t color_mode = (attr0 >> 13) & 0x1;
-		//printf("obj[%d] = %d, x: %d, y: %d\n", i, tileid, objx, objy);
 		if (mem_get_reg16(gpu->mem, MEM_REG_DISPCNT) & (1 << 6))
 		{
 			//XXX
@@ -318,197 +354,119 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 					TO8((col >> 0x0) & 0x1F),
 					0xFF,
 				};
-				/*if (written[screenx])
-				{
-					uint8_t *cur = &data[screenx * 4];
-					color[0] = ((color[0] * eva) >> 4) + ((cur[0] * evb) >> 4);
-					color[1] = ((color[1] * eva) >> 4) + ((cur[1] * evb) >> 4);
-					color[2] = ((color[2] * eva) >> 4) + ((cur[2] * evb) >> 4);
-					printf("eva: %x, evb: %x\n", eva, evb);
-				}
-				else
-				{
-					written[screenx] = 1;
-				}*/
 				memcpy(&data[screenx * 4], color, 4);
 			}
 		}
 	}
 }
 
-static void draw_window_obj(gpu_t *gpu, uint8_t y)
+static void draw_window_obj(gpu_t *gpu, uint8_t y, uint8_t *data)
 {
 }
 
-static void draw_mode0(gpu_t *gpu, uint8_t y)
+static void draw_mode0(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
-	uint8_t bg0_data[240 * 4];
-	uint8_t bg1_data[240 * 4];
-	uint8_t bg2_data[240 * 4];
-	uint8_t bg3_data[240 * 4];
-	uint8_t obj_data[240 * 4];
-	uint8_t *bg_data[4] = {&bg0_data[0], &bg1_data[0], &bg2_data[0], &bg3_data[0]};
-	memset(bg0_data, 0, sizeof(bg0_data));
-	memset(bg1_data, 0, sizeof(bg1_data));
-	memset(bg2_data, 0, sizeof(bg2_data));
-	memset(bg3_data, 0, sizeof(bg3_data));
-	memset(obj_data, 0, sizeof(obj_data));
-	uint8_t bg_prio[4];
-	uint8_t bg_prio_cnt = 0;
-	for (size_t i = 0; i < 4; ++i)
-	{
-		for (size_t j = 0; j < 4; ++j)
-		{
-			if ((mem_get_reg16(gpu->mem, MEM_REG_BG0CNT + 2 * j) & 3) == i)
-				bg_prio[bg_prio_cnt++] = j;
-		}
-	}
 	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
 	if (display & (1 << 0x8))
-		draw_background_tiled(gpu, y, 0, bg0_data);
+		draw_background_tiled(gpu, y, 0, line->bg0);
 	if (display & (1 << 0x9))
-		draw_background_tiled(gpu, y, 1, bg1_data);
+		draw_background_tiled(gpu, y, 1, line->bg1);
 	if (display & (1 << 0xA))
-		draw_background_tiled(gpu, y, 2, bg2_data);
+		draw_background_tiled(gpu, y, 2, line->bg2);
 	if (display & (1 << 0xB))
-		draw_background_tiled(gpu, y, 3, bg3_data);
+		draw_background_tiled(gpu, y, 3, line->bg3);
 	if (display & (1 << 0xC))
-		draw_objects(gpu, 0x10000, y, obj_data);
+		draw_objects(gpu, 0x10000, y, line->obj);
 	if (display & (1 << 0xD))
-		draw_window(gpu, y, 0);
+		draw_window(gpu, y, 0, line->wn0);
 	if (display & (1 << 0xE))
-		draw_window(gpu, y, 1);
-	for (size_t x = 0; x < 240; ++x)
-	{
-		for (size_t i = 0; i < 4; ++i)
-		{
-			if (bg_data[i][x * 4 + 3])
-			{
-				memcpy(&gpu->data[(y * 240 + x) * 4], &bg3_data[x * 4], 3);
-				break;
-			}
-		}
-		if (obj_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &obj_data[x * 4], 3);
-	}
+		draw_window(gpu, y, 1, line->wn1);
+	if (display & (1 << 0xF))
+		draw_window_obj(gpu, y, line->wno);
 }
 
-static void draw_mode1(gpu_t *gpu, uint8_t y)
+static void draw_mode1(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
+	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
+	if (display & (1 << 0x8))
+		draw_background_tiled(gpu, y, 0, line->bg0);
+	if (display & (1 << 0x9))
+		draw_background_tiled(gpu, y, 1, line->bg1);
+	if (display & (1 << 0xA))
+		draw_background_tiled(gpu, y, 2, line->bg2);
+	if (display & (1 << 0xC))
+		draw_objects(gpu, 0x10000, y, line->obj);
+	if (display & (1 << 0xD))
+		draw_window(gpu, y, 0, line->wn0);
+	if (display & (1 << 0xE))
+		draw_window(gpu, y, 1, line->wn1);
+	if (display & (1 << 0xF))
+		draw_window_obj(gpu, y, line->wno);
 }
 
-static void draw_mode2(gpu_t *gpu, uint8_t y)
+static void draw_mode2(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
-	uint8_t bg2_data[240 * 4];
-	uint8_t bg3_data[240 * 4];
-	uint8_t obj_data[240 * 4];
-	memset(bg2_data, 0, sizeof(bg2_data));
-	memset(bg3_data, 0, sizeof(bg3_data));
-	memset(obj_data, 0, sizeof(obj_data));
 	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
 	if (display & (1 << 0xA))
-		draw_background_tiled(gpu, y, 2, bg2_data);
+		draw_background_tiled(gpu, y, 2, line->bg2);
 	if (display & (1 << 0xB))
-		draw_background_tiled(gpu, y, 3, bg3_data);
+		draw_background_tiled(gpu, y, 3, line->bg3);
 	if (display & (1 << 0xC))
-		draw_objects(gpu, 0x10000, y, obj_data);
+		draw_objects(gpu, 0x10000, y, line->obj);
 	if (display & (1 << 0xD))
-		draw_window(gpu, y, 0);
+		draw_window(gpu, y, 0, line->wn0);
 	if (display & (1 << 0xE))
-		draw_window(gpu, y, 1);
+		draw_window(gpu, y, 1, line->wn1);
 	if (display & (1 << 0xF))
-		draw_window_obj(gpu, y);
-	for (size_t x = 0; x < 240; ++x)
-	{
-		//XXX: bg priority
-		if (bg3_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg3_data[x * 4], 3);
-		if (bg2_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg2_data[x * 4], 3);
-		if (obj_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &obj_data[x * 4], 3);
-	}
+		draw_window_obj(gpu, y, line->wno);
 }
 
-static void draw_mode3(gpu_t *gpu, uint8_t y)
+static void draw_mode3(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
-	uint8_t bg2_data[240 * 4];
-	uint8_t obj_data[240 * 4];
-	memset(bg2_data, 0, sizeof(bg2_data));
-	memset(obj_data, 0, sizeof(obj_data));
 	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
 	if (display & (1 << 0xA))
-		draw_background_bitmap_3(gpu, y, bg2_data);
+		draw_background_bitmap_3(gpu, y, line->bg2);
 	if (display & (1 << 0xC))
-		draw_objects(gpu, 0x14000, y, obj_data);
+		draw_objects(gpu, 0x14000, y, line->obj);
 	if (display & (1 << 0xD))
-		draw_window(gpu, y, 0);
+		draw_window(gpu, y, 0, line->wn0);
 	if (display & (1 << 0xE))
-		draw_window(gpu, y, 1);
+		draw_window(gpu, y, 1, line->wn1);
 	if (display & (1 << 0xF))
-		draw_window_obj(gpu, y);
-	for (size_t x = 0; x < 240; ++x)
-	{
-		if (bg2_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg2_data[x * 4], 3);
-		if (obj_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &obj_data[x * 4], 3);
-	}
+		draw_window_obj(gpu, y, line->wno);
 }
 
-static void draw_mode4(gpu_t *gpu, uint8_t y)
+static void draw_mode4(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
-	uint8_t bg2_data[240 * 4];
-	uint8_t obj_data[240 * 4];
-	memset(bg2_data, 0, sizeof(bg2_data));
-	memset(obj_data, 0, sizeof(obj_data));
 	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
 	if (display & (1 << 0xA))
-		draw_background_bitmap_4(gpu, y, bg2_data);
+		draw_background_bitmap_4(gpu, y, line->bg2);
 	if (display & (1 << 0xC))
-		draw_objects(gpu, 0x14000, y, obj_data);
+		draw_objects(gpu, 0x14000, y, line->obj);
 	if (display & (1 << 0xD))
-		draw_window(gpu, y, 0);
+		draw_window(gpu, y, 0, line->wn0);
 	if (display & (1 << 0xE))
-		draw_window(gpu, y, 1);
+		draw_window(gpu, y, 1, line->wn1);
 	if (display & (1 << 0xF))
-		draw_window_obj(gpu, y);
-	for (size_t x = 0; x < 240; ++x)
-	{
-		if (bg2_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg2_data[x * 4], 4);
-		if (obj_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &obj_data[x * 4], 3);
-	}
+		draw_window_obj(gpu, y, line->wno);
 }
 
-static void draw_mode5(gpu_t *gpu, uint8_t y)
+static void draw_mode5(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
-	uint8_t bg2_data[240 * 4];
-	uint8_t obj_data[240 * 4];
-	memset(bg2_data, 0, sizeof(bg2_data));
-	memset(obj_data, 0, sizeof(obj_data));
 	uint32_t display = mem_get_reg32(gpu->mem, MEM_REG_DISPCNT);
 	if (display & (1 << 0xA))
-		draw_background_bitmap_5(gpu, y, bg2_data);
+		draw_background_bitmap_5(gpu, y, line->bg2);
 	if (display & (1 << 0xC))
-		draw_objects(gpu, 0x14000, y, obj_data);
+		draw_objects(gpu, 0x14000, y, line->obj);
 	if (display & (1 << 0xD))
-		draw_window(gpu, y, 0);
+		draw_window(gpu, y, 0, line->wn0);
 	if (display & (1 << 0xE))
-		draw_window(gpu, y, 1);
+		draw_window(gpu, y, 1, line->wn1);
 	if (display & (1 << 0xF))
-		draw_window_obj(gpu, y);
-	for (size_t x = 0; x < 240; ++x)
-	{
-		if (bg2_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &bg2_data[x * 4], 3);
-		if (obj_data[x * 4 + 3])
-			memcpy(&gpu->data[(y * 240 + x) * 4], &obj_data[x * 4], 3);
-	}
+		draw_window_obj(gpu, y, line->wno);
 }
 
-void gpu_draw(gpu_t *gpu, uint8_t y)
+static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
 	uint16_t bg_col = mem_get_bg_palette(gpu->mem, 0);
 	uint8_t bg_color[4] =
@@ -520,31 +478,175 @@ void gpu_draw(gpu_t *gpu, uint8_t y)
 	};
 	for (size_t x = 0; x < 240; ++x)
 		memcpy(&gpu->data[(240 * y + x) * 4], bg_color, 4);
+	uint8_t *bg_data[4] = {&line->bg0[0], &line->bg1[0], &line->bg2[0], &line->bg3[0]};
+	uint8_t bg_prio[4];
+	uint8_t bg_prio_cnt = 0;
+	for (size_t i = 0; i < 4; ++i)
+	{
+		for (size_t j = 0; j < 4; ++j)
+		{
+			if ((mem_get_reg16(gpu->mem, MEM_REG_BG0CNT + 2 * j) & 3) == i)
+				bg_prio[bg_prio_cnt++] = j;
+		}
+	}
+	uint16_t bldcnt = mem_get_reg16(gpu->mem, MEM_REG_BLDCNT);
+	switch ((bldcnt >> 6) & 3)
+	{
+		case 0:
+		{
+			for (size_t x = 0; x < 240; ++x)
+			{
+				for (size_t i = 0; i < bg_prio_cnt; ++i)
+				{
+					if (bg_data[bg_prio[i]][x * 4 + 3])
+					{
+						memcpy(&gpu->data[(y * 240 + x) * 4], &bg_data[bg_prio[i]][x * 4], 3);
+						break;
+					}
+				}
+				if (line->obj[x * 4 + 3])
+					memcpy(&gpu->data[(y * 240 + x) * 4], &line->obj[x * 4], 3);
+			}
+			break;
+		}
+		case 1:
+		{
+			uint16_t bldalpha = mem_get_reg16(gpu->mem, MEM_REG_BLDALPHA);
+			uint8_t eva = (bldalpha >> 0) & 0x1F;
+			uint8_t evb = (bldalpha >> 8) & 0x1F;
+			if (eva >= 0x10)
+				eva = 0x10;
+			if (evb >= 0x10)
+				evb = 0x10;
+			for (size_t x = 0; x < 240; ++x)
+			{
+				uint8_t top_layer[4] = {0};
+				uint8_t bot_layer[4] = {0};
+				if (bldcnt & (1 << 5))
+					memcpy(top_layer, bg_color, 4);
+				if (bldcnt & (1 << 13))
+					memcpy(bot_layer, bg_color, 4);
+				for (size_t i = 0; i < bg_prio_cnt; ++i)
+				{
+					uint8_t bgp = bg_prio[i];
+					if ((bldcnt & (1 << bgp)) && bg_data[bgp][x * 4 + 3])
+					{
+						memcpy(top_layer, &bg_data[bgp][x * 4], 4);
+						break;
+					}
+					if ((bldcnt & (1 << (8 + bgp))) && bg_data[bgp][x * 4 + 3])
+					{
+						memcpy(bot_layer, &bg_data[bgp][x * 4], 4);
+						break;
+					}
+				}
+				if ((bldcnt & (1 << 4)) && line->obj[x * 4 + 3])
+					memcpy(top_layer, &line->obj[x * 4], 4);
+				if ((bldcnt & (1 << 12)) && line->obj[x * 4 + 3])
+					memcpy(bot_layer, &line->obj[x * 4], 4);
+				if (top_layer[3])
+				{
+					if (bot_layer[3])
+					{
+						for (size_t i = 0; i < 3; ++i)
+						{
+							gpu->data[(y * 240 + x) * 4 + i] = (top_layer[i] * eva
+							                                 +  bot_layer[i] * evb) >> 4;
+						}
+					}
+					else
+					{
+						memcpy(&gpu->data[(y * 240 + x) * 4], top_layer, 3);
+					}
+				}
+				else if (bot_layer[3])
+				{
+					memcpy(&gpu->data[(y * 240 + x) * 4], bot_layer, 3);
+				}
+			}
+			break;
+		}
+		case 2:
+		{
+			uint8_t fac = mem_get_reg16(gpu->mem, MEM_REG_BLDY) & 0x1F;
+			for (size_t x = 0; x < 240; ++x)
+			{
+				uint8_t color[4] = {0};
+				for (size_t i = 0; i < bg_prio_cnt; ++i)
+				{
+					uint8_t bgp = bg_prio[i];
+					if ((bldcnt & (1 << (8 + bgp))) && bg_data[bgp][x * 4 + 3])
+					{
+						memcpy(color, &bg_data[bgp][x * 4], 4);
+						break;
+					}
+				}
+				if ((bldcnt & (1 << 4)) && line->obj[x * 4 + 3])
+					memcpy(color, &line->obj[x * 4], 4);
+				if (color[3])
+				{
+					for (size_t i = 0; i < 3; ++i)
+						gpu->data[(y * 240 + x) * 4 + i] = color[i] + (((31 - fac) * color[i]) >> 4);
+				}
+			}
+			break;
+		}
+		case 3:
+		{
+			uint8_t fac = mem_get_reg16(gpu->mem, MEM_REG_BLDY) & 0x1F;
+			for (size_t x = 0; x < 240; ++x)
+			{
+				uint8_t color[4] = {0};
+				for (size_t i = 0; i < bg_prio_cnt; ++i)
+				{
+					uint8_t bgp = bg_prio[i];
+					if ((bldcnt & (1 << (8 + bgp))) && bg_data[bgp][x * 4 + 3])
+					{
+						memcpy(color, &bg_data[bgp][x * 4], 4);
+						break;
+					}
+				}
+				if ((bldcnt & (1 << 4)) && line->obj[x * 4 + 3])
+					memcpy(color, &line->obj[x * 4], 4);
+				if (color[3])
+				{
+					for (size_t i = 0; i < 3; ++i)
+						gpu->data[(y * 240 + x) * 4 + i] = color[i] - ((fac * color[i]) >> 4);
+				}
+			}
+			break;
+		}
+	}
+}
+
+void gpu_draw(gpu_t *gpu, uint8_t y)
+{
+	line_buff_t line;
+	memset(&line, 0, sizeof(line));
 	uint16_t display = mem_get_reg16(gpu->mem, MEM_REG_DISPCNT);
-	if (0)
-		printf("display: %d\n", display & 0x7);
 	switch (display & 0x7)
 	{
 		case 0:
-			draw_mode0(gpu, y);
-			return;
+			draw_mode0(gpu, &line, y);
+			break;
 		case 1:
-			draw_mode1(gpu, y);
+			draw_mode1(gpu, &line, y);
 			break;
 		case 2:
-			draw_mode2(gpu, y);
-			return;
+			draw_mode2(gpu, &line, y);
+			break;
 		case 3:
-			draw_mode3(gpu, y);
+			draw_mode3(gpu, &line, y);
 			break;
 		case 4:
-			draw_mode4(gpu, y);
+			draw_mode4(gpu, &line, y);
 			break;
 		case 5:
-			draw_mode5(gpu, y);
+			draw_mode5(gpu, &line, y);
 			break;
 		default:
 			printf("invalid mode: %x\n", display & 0x7);
-			break;
+			return;
 	}
+	compose(gpu, &line, y);
 }

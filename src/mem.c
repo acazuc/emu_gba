@@ -506,7 +506,7 @@ uint##size##_t mem_get##size(mem_t *mem, uint32_t addr) \
 			return mbc_get##size(mem->mbc, addr); \
 	} \
 end: \
-	printf("[%08x] unknown get" #size " addr: %08x\n", cpu_get_reg(mem->gba->cpu, CPU_REG_PC), addr); \
+	/*printf("[%08x] unknown get" #size " addr: %08x\n", cpu_get_reg(mem->gba->cpu, CPU_REG_PC), addr);*/ \
 	return 0; \
 }
 
@@ -579,7 +579,7 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 			return; \
 	} \
 end: \
-	printf("[%08x] unknown set" #size " addr: %08x\n", cpu_get_reg(mem->gba->cpu, CPU_REG_PC), addr); \
+	/*printf("[%08x] unknown set" #size " addr: %08x\n", cpu_get_reg(mem->gba->cpu, CPU_REG_PC), addr);*/ \
 }
 
 MEM_SET(8);
