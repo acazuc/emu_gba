@@ -3,9 +3,32 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <stdio.h>
 
 #define TO8(v) (((uint32_t)(v) * 527 + 23) >> 6)
+
+#define RGB5TO8(v) \
+{ \
+	TO8((v >> 0xA) & 0x1F), \
+	TO8((v >> 0x5) & 0x1F), \
+	TO8((v >> 0x0) & 0x1F), \
+	0xFF, \
+}
+
+enum layer_type
+{
+	LAYER_NONE,
+	LAYER_BD,
+	LAYER_BG0,
+	LAYER_BG1,
+	LAYER_BG2,
+	LAYER_BG3,
+	LAYER_OBJ,
+	LAYER_WN0,
+	LAYER_WN1,
+	LAYER_WNO,
+};
 
 typedef struct line_buff_s
 {
@@ -75,22 +98,17 @@ static void draw_background_tiled(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *da
 		else
 		{
 			tileaddr += tileid * 0x20;
+			paladdr = mem_get_vram8(gpu->mem, tileaddr + tilex / 2 + tiley * 4);
 			if (tilex & 1)
-				paladdr = mem_get_vram8(gpu->mem, tileaddr + tilex / 2 + tiley * 4) >> 4;
+				paladdr = paladdr >> 4;
 			else
-				paladdr = mem_get_vram8(gpu->mem, tileaddr + tilex / 2 + tiley * 4) & 0xF;
+				paladdr = paladdr & 0xF;
 			if (!paladdr)
 				continue;
 			paladdr += ((map >> 12) & 0xF) * 0x10;
 		}
 		uint16_t val = mem_get_bg_palette(gpu->mem, paladdr * 2);
-		uint8_t color[4] =
-		{
-			TO8((val >> 0xA) & 0x1F),
-			TO8((val >> 0x5) & 0x1F),
-			TO8((val >> 0x0) & 0x1F),
-			0xFF,
-		};
+		uint8_t color[4] = RGB5TO8(val);
 		memcpy(&data[x * 4], color, 4);
 	}
 }
@@ -111,13 +129,7 @@ static void draw_background_bitmap_3(gpu_t *gpu, uint8_t y, uint8_t *data)
 		uint32_t vy = ((pc * dx + pd * dy) >> 8) + bgy;
 		uint32_t addr = 2 * (x + 240 * y);
 		uint16_t val = mem_get_vram16(gpu->mem, addr);
-		uint8_t color[4] =
-		{
-			TO8((val >> 0xA) & 0x1F),
-			TO8((val >> 0x5) & 0x1F),
-			TO8((val >> 0x0) & 0x1F),
-			0xFF,
-		};
+		uint8_t color[4] = RGB5TO8(val);
 		memcpy(&data[x * 4], color, 4);
 	}
 }
@@ -143,13 +155,7 @@ static void draw_background_bitmap_4(gpu_t *gpu, uint8_t y, uint8_t *data)
 		if (!val)
 			continue;
 		uint16_t col = mem_get_bg_palette(gpu->mem, val * 2);
-		uint8_t color[4] =
-		{
-			TO8((col >> 0xA) & 0x1F),
-			TO8((col >> 0x5) & 0x1F),
-			TO8((col >> 0x0) & 0x1F),
-			0xFF,
-		};
+		uint8_t color[4] = RGB5TO8(col);
 		memcpy(&data[x * 4], color, 4);
 	}
 }
@@ -178,13 +184,7 @@ static void draw_background_bitmap_5(gpu_t *gpu, uint8_t y, uint8_t *data)
 		uint32_t vy = ((pc * dx + pd * dy) >> 8) + bgy;
 		uint32_t addr = baseaddr + 2 * (x + 160 * y);
 		uint16_t val = mem_get_vram16(gpu->mem, addr);
-		uint8_t color[4] =
-		{
-			TO8((val >> 0xA) & 0x1F),
-			TO8((val >> 0x5) & 0x1F),
-			TO8((val >> 0x0) & 0x1F),
-			0xFF,
-		};
+		uint8_t color[4] = RGB5TO8(val);
 		memcpy(&data[(40 + x) * 4], color, 4);
 	}
 }
@@ -238,7 +238,6 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 	return;
 #endif
 
-
 	for (int16_t i = 127; i >= 0; --i)
 	{
 		uint16_t attr0 = mem_get_oam16(gpu->mem, i * 8);
@@ -287,6 +286,7 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 		}
 		uint16_t attr2 = mem_get_oam16(gpu->mem, i * 8 + 4);
 		uint16_t tileid = attr2 & 0x3FF;
+		uint8_t palette = (attr2 >> 12) & 0xF;
 		uint8_t mode = (attr0 >> 10) & 0x3;
 		uint8_t color_mode = (attr0 >> 13) & 0x1;
 		if (mem_get_reg16(gpu->mem, MEM_REG_DISPCNT) & (1 << 6))
@@ -295,10 +295,6 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 		}
 		else
 		{
-			if (color_mode)
-				tileid >>= 1;
-			uint8_t xsize = color_mode ? 16 : 32;
-			uint8_t ysize = 32;
 			int16_t centerx = width / 2;
 			int16_t centery = height / 2;
 			for (int16_t x = 0; x < width; ++x)
@@ -335,24 +331,41 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 				{
 					texx = xpos;
 					texy = ypos;
+					if (attr1 & (1 << 12))
+						xpos = width - 1 - xpos;
+					if (attr1 & (1 << 13))
+						ypos = height - 1 - ypos;
 				}
 				int16_t tilex = texx / 8;
 				int16_t tilebx = texx % 8;
 				int16_t tiley = texy / 8;
 				int16_t tileby = texy % 8;
-				uint16_t tilepos = tileid + tilex + xsize * tiley;
+				uint16_t tilepos = tileid + tilex + 32 * tiley;
+				if (color_mode)
+					tilepos += tilex;
 				tilepos &= 0x3FF;
-				uint32_t tilea = tileaddr + tilepos * 0x40 + tileby * 0x8 + tilebx;
-				uint8_t tilev = mem_get_vram8(gpu->mem, tilea);
+				uint32_t tileoff = tileby * 0x8 + tilebx;
+				if (!color_mode)
+					tileoff /= 2;
+				uint8_t tilev = mem_get_vram8(gpu->mem, tileaddr + tilepos * 0x20 + tileoff);
+				if (!color_mode)
+				{
+					if (tilebx & 1)
+						tilev = tilev >> 4;
+					else
+						tilev = tilev & 0xF;
+				}
 				if (!tilev)
 					continue;
+				if (!color_mode)
+					tilev += palette * 0x10;
 				uint16_t col = mem_get_obj_palette(gpu->mem, tilev * 2);
 				uint8_t color[4] =
 				{
 					TO8((col >> 0xA) & 0x1F),
 					TO8((col >> 0x5) & 0x1F),
 					TO8((col >> 0x0) & 0x1F),
-					0xFF,
+					0x80 | mode,
 				};
 				memcpy(&data[screenx * 4], color, 4);
 			}
@@ -466,18 +479,41 @@ static void draw_mode5(gpu_t *gpu, line_buff_t *line, uint8_t y)
 		draw_window_obj(gpu, y, line->wno);
 }
 
+static const uint8_t *layer_data(line_buff_t *line, enum layer_type layer, const uint8_t *bd_color, uint32_t n)
+{
+	switch (layer)
+	{
+		case LAYER_BD:
+			return bd_color;
+		case LAYER_BG0:
+			return &line->bg0[n];
+		case LAYER_BG1:
+			return &line->bg1[n];
+		case LAYER_BG2:
+			return &line->bg2[n];
+		case LAYER_BG3:
+			return &line->bg3[n];
+		case LAYER_OBJ:
+			return &line->obj[n];
+		case LAYER_WN0:
+			return &line->wn0[n];
+		case LAYER_WN1:
+			return &line->wn1[n];
+		case LAYER_WNO:
+			return &line->wno[n];
+		case LAYER_NONE:
+			break;
+	}
+	assert(!"unknown layer");
+	return NULL;
+}
+
 static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
-	uint16_t bg_col = mem_get_bg_palette(gpu->mem, 0);
-	uint8_t bg_color[4] =
-	{
-		TO8((bg_col >> 0xA) & 0x1F),
-		TO8((bg_col >> 0x5) & 0x1F),
-		TO8((bg_col >> 0x0) & 0x1F),
-		0xFF,
-	};
+	uint16_t bd_col = mem_get_bg_palette(gpu->mem, 0);
+	uint8_t bd_color[4] = RGB5TO8(bd_col);
 	for (size_t x = 0; x < 240; ++x)
-		memcpy(&gpu->data[(240 * y + x) * 4], bg_color, 4);
+		memcpy(&gpu->data[(240 * y + x) * 4], bd_color, 4);
 	uint8_t *bg_data[4] = {&line->bg0[0], &line->bg1[0], &line->bg2[0], &line->bg3[0]};
 	uint8_t bg_prio[4];
 	uint8_t bg_prio_cnt = 0;
@@ -496,16 +532,18 @@ static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 		{
 			for (size_t x = 0; x < 240; ++x)
 			{
+				enum layer_type layer = LAYER_BD;
 				for (size_t i = 0; i < bg_prio_cnt; ++i)
 				{
 					if (bg_data[bg_prio[i]][x * 4 + 3])
 					{
-						memcpy(&gpu->data[(y * 240 + x) * 4], &bg_data[bg_prio[i]][x * 4], 3);
+						layer = LAYER_BG0 + bg_prio[i];
 						break;
 					}
 				}
 				if (line->obj[x * 4 + 3])
-					memcpy(&gpu->data[(y * 240 + x) * 4], &line->obj[x * 4], 3);
+					layer = LAYER_OBJ;
+				memcpy(&gpu->data[(y * 240 + x) * 4], layer_data(line, layer, bd_color, x * 4), 3);
 			}
 			break;
 		}
@@ -520,48 +558,52 @@ static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 				evb = 0x10;
 			for (size_t x = 0; x < 240; ++x)
 			{
-				uint8_t top_layer[4] = {0};
-				uint8_t bot_layer[4] = {0};
+				uint8_t *dst = &gpu->data[(y * 240 + x) * 4];
+				enum layer_type top_layer = LAYER_NONE;
+				enum layer_type bot_layer = LAYER_NONE;
 				if (bldcnt & (1 << 5))
-					memcpy(top_layer, bg_color, 4);
+					top_layer = LAYER_BD;
 				if (bldcnt & (1 << 13))
-					memcpy(bot_layer, bg_color, 4);
+					bot_layer = LAYER_BD;
 				for (size_t i = 0; i < bg_prio_cnt; ++i)
 				{
 					uint8_t bgp = bg_prio[i];
-					if ((bldcnt & (1 << bgp)) && bg_data[bgp][x * 4 + 3])
+					if ((bldcnt & (1 << bgp)) && bg_data[bgp][x * 4 + 3] && top_layer < LAYER_BG0)
 					{
-						memcpy(top_layer, &bg_data[bgp][x * 4], 4);
-						break;
+						top_layer = LAYER_BG0 + bgp;
+						continue;
 					}
-					if ((bldcnt & (1 << (8 + bgp))) && bg_data[bgp][x * 4 + 3])
-					{
-						memcpy(bot_layer, &bg_data[bgp][x * 4], 4);
-						break;
-					}
+					if ((bldcnt & (1 << (8 + bgp))) && bg_data[bgp][x * 4 + 3] && bot_layer < LAYER_BG0)
+						bot_layer = LAYER_BG0 + bgp;
 				}
-				if ((bldcnt & (1 << 4)) && line->obj[x * 4 + 3])
-					memcpy(top_layer, &line->obj[x * 4], 4);
-				if ((bldcnt & (1 << 12)) && line->obj[x * 4 + 3])
-					memcpy(bot_layer, &line->obj[x * 4], 4);
-				if (top_layer[3])
+				if (line->obj[x * 4 + 3] == 0x81 || ((bldcnt & (1 << 4)) && line->obj[x * 4 + 3] == 0x80))
+					top_layer = LAYER_OBJ;
+				if ((bldcnt & (1 << 12)) && line->obj[x * 4 + 3] == 0x80)
+					bot_layer = LAYER_OBJ;
+				if (top_layer != LAYER_NONE)
 				{
-					if (bot_layer[3])
+					if (bot_layer != LAYER_NONE)
 					{
+						const uint8_t *top_layer_data = layer_data(line, top_layer, bd_color, x * 4);
+						const uint8_t *bot_layer_data = layer_data(line, bot_layer, bd_color, x * 4);
 						for (size_t i = 0; i < 3; ++i)
 						{
-							gpu->data[(y * 240 + x) * 4 + i] = (top_layer[i] * eva
-							                                 +  bot_layer[i] * evb) >> 4;
+							dst[i] = (top_layer_data[i] * eva
+							       +  bot_layer_data[i] * evb) >> 4;
 						}
 					}
 					else
 					{
-						memcpy(&gpu->data[(y * 240 + x) * 4], top_layer, 3);
+						memcpy(dst, layer_data(line, top_layer, bd_color, x * 4), 3);
 					}
 				}
-				else if (bot_layer[3])
+				else if (bot_layer != LAYER_NONE)
 				{
-					memcpy(&gpu->data[(y * 240 + x) * 4], bot_layer, 3);
+					memcpy(dst, layer_data(line, bot_layer, bd_color, x * 4), 3);
+				}
+				else
+				{
+					memcpy(dst, bd_color, 4);
 				}
 			}
 			break;

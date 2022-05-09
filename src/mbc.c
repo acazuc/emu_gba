@@ -15,6 +15,7 @@ mbc_t *mbc_new(const void *data, size_t size)
 		return NULL;
 
 	memcpy(mbc->data, data, size);
+	memset(mbc->sram, 0xff, sizeof(mbc->sram));
 	mbc->data_size = size;
 	return mbc;
 }

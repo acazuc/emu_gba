@@ -578,7 +578,7 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 			mbc_set##size(mem->mbc, addr, v); \
 			return; \
 	} \
-end: \
+end:; \
 	/*printf("[%08x] unknown set" #size " addr: %08x\n", cpu_get_reg(mem->gba->cpu, CPU_REG_PC), addr);*/ \
 }
 
