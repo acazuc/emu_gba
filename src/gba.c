@@ -62,6 +62,7 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 {
 	//printf("frame\n");
 	gba->joypad = joypad;
+	gba_test_keypad_int(gba);
 	for (uint8_t y = 0; y < 160; ++y)
 	{
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFC) | 0x0);
@@ -113,12 +114,48 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 
 void gba_get_mbc_ram(gba_t *gba, uint8_t **data, size_t *size)
 {
-	*data = NULL;
-	*size = 0;
+	*data = gba->mbc->sram;
+	*size = sizeof(gba->mbc->sram);
 }
 
 void gba_get_mbc_rtc(gba_t *gba, uint8_t **data, size_t *size)
 {
+	(void)gba;
 	*data = NULL;
 	*size = 0;
+}
+
+void gba_test_keypad_int(gba_t *gba)
+{
+	uint16_t keycnt = mem_get_reg16(gba->mem, MEM_REG_KEYCNT);
+	if (!(keycnt & (1 << 14)))
+		return;
+	uint16_t keys = 0;
+	if (gba->joypad & GBA_BUTTON_A)
+		keys |= (1 << 0);
+	if (gba->joypad & GBA_BUTTON_B)
+		keys |= (1 << 1);
+	if (gba->joypad & GBA_BUTTON_SELECT)
+		keys |= (1 << 2);
+	if (gba->joypad & GBA_BUTTON_START)
+		keys |= (1 << 3);
+	if (gba->joypad & GBA_BUTTON_RIGHT)
+		keys |= (1 << 4);
+	if (gba->joypad & GBA_BUTTON_LEFT)
+		keys |= (1 << 5);
+	if (gba->joypad & GBA_BUTTON_UP)
+		keys |= (1 << 6);
+	if (gba->joypad & GBA_BUTTON_DOWN)
+		keys |= (1 << 7);
+	if (gba->joypad & GBA_BUTTON_R)
+		keys |= (1 << 8);
+	if (gba->joypad & GBA_BUTTON_L)
+		keys |= (1 << 9);
+	bool enabled;
+	if (keycnt & (1 << 14))
+		enabled = (keys & (keycnt & 0x3FF)) == (keycnt & 0x3FF);
+	else
+		enabled = keys & keycnt;
+	if (enabled)
+		mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 12));
 }

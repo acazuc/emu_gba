@@ -43,4 +43,6 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 void gba_get_mbc_ram(gba_t *gba, uint8_t **data, size_t *size);
 void gba_get_mbc_rtc(gba_t *gba, uint8_t **data, size_t *size);
 
+void gba_test_keypad_int(gba_t *gba);
+
 #endif

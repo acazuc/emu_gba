@@ -262,6 +262,9 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 		uint16_t attr0 = mem_get_oam16(gpu->mem, i * 8);
 		if ((attr0 & 0x300) == 0x200) //disable flag
 			continue;
+		uint8_t mode = (attr0 >> 10) & 0x3;
+		if (mode == 3)
+			continue;
 		int16_t objy = attr0 & 0xFF;
 		if (objy >= 160)
 			objy -= 256;
@@ -312,10 +315,8 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 		uint16_t attr2 = mem_get_oam16(gpu->mem, i * 8 + 4);
 		uint16_t tileid = attr2 & 0x3FF;
 		uint8_t palette = (attr2 >> 12) & 0xF;
-		uint8_t mode = (attr0 >> 10) & 0x3;
-		if (mode == 3)
-			continue;
 		uint8_t color_mode = (attr0 >> 13) & 0x1;
+		uint8_t priority = (attr2 >> 10) & 0x3;
 		int16_t centerx = width / 2;
 		int16_t centery = height / 2;
 		for (int16_t x = 0; x < width; ++x)
@@ -397,7 +398,7 @@ static void draw_objects(gpu_t *gpu, uint32_t tileaddr, uint8_t y, uint8_t *data
 				TO8((col >> 0xA) & 0x1F),
 				TO8((col >> 0x5) & 0x1F),
 				TO8((col >> 0x0) & 0x1F),
-				0x80 | mode,
+				0x80 | mode | (priority << 2),
 			};
 			memcpy(&data[screenx * 4], color, 4);
 		}
@@ -505,7 +506,7 @@ static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 					if ((bldcnt & (1 << (8 + bgp))) && bg_data[bgp][x * 4 + 3] && bot_layer < LAYER_BG0)
 						bot_layer = LAYER_BG0 + bgp;
 				}
-				if (line->obj[x * 4 + 3] == 0x81 || ((bldcnt & (1 << 4)) && line->obj[x * 4 + 3] == 0x80))
+				if ((line->obj[x * 4 + 3] & 0x83) == 0x81 || ((bldcnt & (1 << 4)) && (line->obj[x * 4 + 3] & 0x83) == 0x80))
 					top_layer = LAYER_OBJ;
 				if ((bldcnt & (1 << 12)) && line->obj[x * 4 + 3] == 0x80)
 					bot_layer = LAYER_OBJ;

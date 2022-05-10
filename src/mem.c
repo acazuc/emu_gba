@@ -192,6 +192,11 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 		case MEM_REG_KEYINPUT:
 		case MEM_REG_KEYINPUT + 1:
 			return;
+		case MEM_REG_KEYCNT:
+		case MEM_REG_KEYCNT + 1:
+			mem->io_regs[reg] = v;
+			gba_test_keypad_int(mem->gba);
+			return;
 		case MEM_REG_DMA0SAD:
 		case MEM_REG_DMA0SAD + 1:
 		case MEM_REG_DMA0SAD + 2:
