@@ -56,6 +56,7 @@ static void gba_cycle(gba_t *gba)
 	mem_timers(gba->mem);
 	if (!has_dma)
 		cpu_cycle(gba->cpu);
+	apu_cycle(gba->apu);
 }
 
 void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joypad)

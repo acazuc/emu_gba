@@ -55,7 +55,7 @@ uint##size##_t mbc_get##size(mbc_t *mbc, uint32_t addr) \
 		} \
 		case 0xE: /* sram */ \
 		{ \
-			uint32_t a = addr & 0xFFFF; \
+			uint32_t a = addr & 0x7FFF; \
 			return *(uint##size##_t*)&mbc->sram[a]; \
 		} \
 		case 0xF: /* unused */ \
@@ -85,7 +85,7 @@ void mbc_set##size(mbc_t *mbc, uint32_t addr, uint##size##_t v) \
 			return; \
 		case 0xE: /* sram */ \
 		{ \
-			uint32_t a = addr & 0xFFFF; \
+			uint32_t a = addr & 0x7FFF; \
 			*(uint##size##_t*)&mbc->sram[a] = v; \
 			return; \
 		} \
@@ -93,7 +93,6 @@ void mbc_set##size(mbc_t *mbc, uint32_t addr, uint##size##_t v) \
 			break; \
 	} \
 	printf("unknown set" #size " mbc addr: %08x\n", addr); \
-	return; \
 }
 
 MBC_SET(8);

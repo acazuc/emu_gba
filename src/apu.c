@@ -18,3 +18,7 @@ void apu_del(apu_t *apu)
 		return;
 	free(apu);
 }
+
+void apu_cycle(apu_t *apu)
+{
+}

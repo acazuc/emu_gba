@@ -104,8 +104,8 @@ bool mem_dma(mem_t *mem)
 			case 3:
 				break;
 		}
-		mem->dma[i].len--;
-		if (!mem->dma[i].len)
+		mem->dma[i].cnt++;
+		if (mem->dma[i].cnt == mem->dma[i].len)
 		{
 			mem->dma[i].enabled = false;
 			mem_set_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i, mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i) & ~(1 << 15));
@@ -123,6 +123,7 @@ static void dma_control(mem_t *mem, uint8_t dma)
 	mem->dma[dma].src = mem_get_reg32(mem, MEM_REG_DMA0SAD + 0xC * dma);
 	mem->dma[dma].dst = mem_get_reg32(mem, MEM_REG_DMA0DAD + 0xC * dma);
 	mem->dma[dma].len = mem_get_reg16(mem, MEM_REG_DMA0CNT_L + 0xC * dma) - 1;
+	mem->dma[dma].cnt = 0;
 	if (mem->dma[dma].len)
 	{
 		if (mem->dma[dma].len > len_max[dma])

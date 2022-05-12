@@ -120,6 +120,7 @@ typedef struct mem_dma_s
 	uint32_t src;
 	uint32_t dst;
 	uint32_t len;
+	uint32_t cnt;
 } mem_dma_t;
 
 typedef struct mem_timer_s

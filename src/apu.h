@@ -11,4 +11,6 @@ typedef struct apu_s
 apu_t *apu_new(mem_t *mem);
 void apu_del(apu_t *apu);
 
+void apu_cycle(apu_t *apu);
+
 #endif
