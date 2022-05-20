@@ -66,12 +66,13 @@ static uint16_t gen_sample(apu_t *apu)
 		return 0;
 	uint16_t cnt_l = mem_get_reg16(apu->mem, MEM_REG_SOUNDCNT_L);
 	uint16_t cnt_h = mem_get_reg16(apu->mem, MEM_REG_SOUNDCNT_H);
+	uint16_t bias = mem_get_reg16(apu->mem, MEM_REG_SOUNDBIAS);
 	uint16_t l = 0;
 	uint16_t r = 0;
 	uint8_t values[4] = {0};
 	if (cnt_x & (1 << 0))
 	{
-		values[0] = channel1(apu) >> 4;
+		values[0] = channel1(apu) >> 5;
 		if (cnt_l & (1 << 4))
 			l += values[0];
 		if (cnt_l & (1 << 0))
@@ -79,7 +80,7 @@ static uint16_t gen_sample(apu_t *apu)
 	}
 	if (cnt_x & (1 << 1))
 	{
-		values[1] = channel2(apu) >> 4;
+		values[1] = channel2(apu) >> 5;
 		if (cnt_l & (1 << 5))
 			l += values[1];
 		if (cnt_l & (1 << 1))
@@ -87,7 +88,7 @@ static uint16_t gen_sample(apu_t *apu)
 	}
 	if (cnt_x & (1 << 2))
 	{
-		values[2] = channel3(apu) >> 4;
+		values[2] = channel3(apu) >> 5;
 		if (cnt_l & (1 << 6))
 			l += values[2];
 		if (cnt_l & (1 << 2))
@@ -95,7 +96,7 @@ static uint16_t gen_sample(apu_t *apu)
 	}
 	if (cnt_x & (1 << 3))
 	{
-		values[3] = channel4(apu) >> 4;
+		values[3] = channel4(apu) >> 5;
 		if (cnt_l & (1 << 7))
 			l += values[3];
 		if (cnt_l & (1 << 3))
@@ -103,19 +104,25 @@ static uint16_t gen_sample(apu_t *apu)
 	}
 	l = l * ((cnt_l & 0x70) >> 4) / 7;
 	r = r * ((cnt_l & 0x07) >> 0) / 7;
-	l = l >> psg_gains[cnt_h & 0x3];
-	r = r >> psg_gains[cnt_h & 0x3];
-	uint8_t fifo1 = apu->fifo1_val + 128;
-	uint8_t fifo2 = apu->fifo2_val + 128;
-	fifo1 >>= 2 + (((cnt_l >> 2) & 1) ^ 1);
-	fifo2 >>= 2 + (((cnt_l >> 3) & 1) ^ 1);
-	if (cnt_l & (1 << 9))
+	uint8_t psg_gain = psg_gains[cnt_h & 0x3];
+	l = l >> psg_gain;
+	r = r >> psg_gain;
+	uint8_t bias_level = (bias >> 2) & 0xFF;
+	uint8_t fifo1 = apu->fifo1_val + bias_level;
+	uint8_t fifo2 = apu->fifo2_val + bias_level;
+	fifo1 >>= 2;
+	if (!(cnt_h & (1 << 2)))
+		fifo1 >>= 1;
+	fifo2 >>= 2;
+	if (!(cnt_h & (1 << 3)))
+		fifo2 >>= 1;
+	if (cnt_h & (1 << 9))
 		l += fifo1;
-	if (cnt_l & (1 << 8))
+	if (cnt_h & (1 << 8))
 		r += fifo1;
-	if (cnt_l & (1 << 13))
+	if (cnt_h & (1 << 13))
 		l += fifo2;
-	if (cnt_l & (1 << 12))
+	if (cnt_h & (1 << 12))
 		r += fifo2;
 	return (l << 8) | r;
 }

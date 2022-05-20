@@ -3,6 +3,7 @@
 #include "gba.h"
 #include "cpu.h"
 #include "apu.h"
+#include "gpu.h"
 
 #include <stdlib.h>
 #include <assert.h>
@@ -154,7 +155,6 @@ bool mem_dma(mem_t *mem)
 		uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i);
 		if ((i == 1 || i == 2) && (((cnt_h >> 12) & 0x3) == 3))
 		{
-			printf("DMA %d\n", i);
 			uint8_t fifo_id = (mem->dma[i].dst - 0x40000a0u) / 4;
 			assert(mem->fifo_nb[i] <= 16);
 			memmove(&mem->fifo[fifo_id][16], &mem->fifo[fifo_id][0], mem->fifo_nb[fifo_id]);
@@ -333,6 +333,34 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 		case MEM_REG_FIFO_A + 2:
 		case MEM_REG_FIFO_A + 3:
 			return;
+		case MEM_REG_BG2X:
+		case MEM_REG_BG2X + 1:
+		case MEM_REG_BG2X + 2:
+		case MEM_REG_BG2X + 3:
+			mem->io_regs[reg] = v;
+			mem->gba->gpu->bg2x = mem_get_reg32(mem, MEM_REG_BG2X);
+			return;
+		case MEM_REG_BG2Y:
+		case MEM_REG_BG2Y + 1:
+		case MEM_REG_BG2Y + 2:
+		case MEM_REG_BG2Y + 3:
+			mem->io_regs[reg] = v;
+			mem->gba->gpu->bg2y = mem_get_reg32(mem, MEM_REG_BG2Y);
+			return;
+		case MEM_REG_BG3X:
+		case MEM_REG_BG3X + 1:
+		case MEM_REG_BG3X + 2:
+		case MEM_REG_BG3X + 3:
+			mem->io_regs[reg] = v;
+			mem->gba->gpu->bg3x = mem_get_reg32(mem, MEM_REG_BG3X);
+			return;
+		case MEM_REG_BG3Y:
+		case MEM_REG_BG3Y + 1:
+		case MEM_REG_BG3Y + 2:
+		case MEM_REG_BG3Y + 3:
+			mem->io_regs[reg] = v;
+			mem->gba->gpu->bg3y = mem_get_reg32(mem, MEM_REG_BG3Y);
+			return;
 		case MEM_REG_DMA0SAD:
 		case MEM_REG_DMA0SAD + 1:
 		case MEM_REG_DMA0SAD + 2:
@@ -419,22 +447,6 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 		case MEM_REG_BG3PC + 1:
 		case MEM_REG_BG3PD:
 		case MEM_REG_BG3PD + 1:
-		case MEM_REG_BG2X:
-		case MEM_REG_BG2X + 1:
-		case MEM_REG_BG2X + 2:
-		case MEM_REG_BG2X + 3:
-		case MEM_REG_BG2Y:
-		case MEM_REG_BG2Y + 1:
-		case MEM_REG_BG2Y + 2:
-		case MEM_REG_BG2Y + 3:
-		case MEM_REG_BG3X:
-		case MEM_REG_BG3X + 1:
-		case MEM_REG_BG3X + 2:
-		case MEM_REG_BG3X + 3:
-		case MEM_REG_BG3Y:
-		case MEM_REG_BG3Y + 1:
-		case MEM_REG_BG3Y + 2:
-		case MEM_REG_BG3Y + 3:
 		case MEM_REG_IME:
 		case MEM_REG_IME + 1:
 		case MEM_REG_IE:

@@ -134,21 +134,17 @@ static void draw_background_affine(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *d
 	uint32_t mapbase = ((bgcnt >> 8) & 0x1F) * 0x800;
 	uint32_t mapsize = mapsizes[size];
 	int32_t pa = mem_get_reg16(gpu->mem, MEM_REG_BG2PA + 0x10 * (bg - 2));
-	int32_t pb = mem_get_reg16(gpu->mem, MEM_REG_BG2PB + 0x10 * (bg - 2));
 	int32_t pc = mem_get_reg16(gpu->mem, MEM_REG_BG2PC + 0x10 * (bg - 2));
-	int32_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD + 0x10 * (bg - 2));
-	int32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X + 0x10 * (bg - 2)) & 0xFFFFFFF;
-	int32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y + 0x10 * (bg - 2)) & 0xFFFFFFF;
+	int32_t bgx = bg == 2 ? gpu->bg2x : gpu->bg3x;
+	int32_t bgy = bg == 2 ? gpu->bg2y : gpu->bg3y;
 	TRANSFORM_INT16(pa);
-	TRANSFORM_INT16(pb);
 	TRANSFORM_INT16(pc);
-	TRANSFORM_INT16(pd);
 	TRANSFORM_INT28(bgx);
 	TRANSFORM_INT28(bgy);
 	for (int32_t x = 0; x < 240; ++x)
 	{
-		int32_t vx = (((pa * x + pb * y) - bgx) >> 8) % mapsize;
-		int32_t vy = (((pc * x + pd * y) - bgy) >> 8) % mapsize;
+		int32_t vx = ((pa * x + bgx) / 256) % mapsize;
+		int32_t vy = ((pc * x + bgy) / 256) % mapsize;
 		if (vx < 0)
 			vx += mapsize;
 		if (vy < 0)
@@ -173,21 +169,17 @@ static void draw_background_affine(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *d
 static void draw_background_bitmap_3(gpu_t *gpu, uint8_t y, uint8_t *data)
 {
 	int32_t pa = mem_get_reg16(gpu->mem, MEM_REG_BG2PA);
-	int32_t pb = mem_get_reg16(gpu->mem, MEM_REG_BG2PB);
 	int32_t pc = mem_get_reg16(gpu->mem, MEM_REG_BG2PC);
-	int32_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD);
-	int32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X) & 0xFFFFFFF;
-	int32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y) & 0xFFFFFFF;
+	int32_t bgx = gpu->bg2x;
+	int32_t bgy = gpu->bg2y;
 	TRANSFORM_INT16(pa);
-	TRANSFORM_INT16(pb);
 	TRANSFORM_INT16(pc);
-	TRANSFORM_INT16(pd);
 	TRANSFORM_INT28(bgx);
 	TRANSFORM_INT28(bgy);
 	for (int32_t x = 0; x < 240; ++x)
 	{
-		int32_t vx = (((pa * x + pb * y) + bgx) >> 8) % 240;
-		int32_t vy = (((pc * x + pd * y) + bgy) >> 8) % 160;
+		int32_t vx = ((pa * x + bgx) / 256) % 240;
+		int32_t vy = ((pc * x + bgy) / 256) % 160;
 		if (vx < 0)
 			vx += 240;
 		if (vy < 0)
@@ -202,23 +194,19 @@ static void draw_background_bitmap_3(gpu_t *gpu, uint8_t y, uint8_t *data)
 static void draw_background_bitmap_4(gpu_t *gpu, uint8_t y, uint8_t *data)
 {
 	int32_t pa = mem_get_reg16(gpu->mem, MEM_REG_BG2PA);
-	int32_t pb = mem_get_reg16(gpu->mem, MEM_REG_BG2PB);
 	int32_t pc = mem_get_reg16(gpu->mem, MEM_REG_BG2PC);
-	int32_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD);
-	int32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X) & 0xFFFFFFF;
-	int32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y) & 0xFFFFFFF;
+	int32_t bgx = gpu->bg2x;
+	int32_t bgy = gpu->bg2y;
 	TRANSFORM_INT16(pa);
-	TRANSFORM_INT16(pb);
 	TRANSFORM_INT16(pc);
-	TRANSFORM_INT16(pd);
 	TRANSFORM_INT28(bgx);
 	TRANSFORM_INT28(bgy);
 	uint16_t dispcnt = mem_get_reg16(gpu->mem, MEM_REG_DISPCNT);
 	uint32_t addr_offset = (dispcnt & (1 << 4)) ? 0xA000 : 0;
 	for (int32_t x = 0; x < 240; ++x)
 	{
-		int32_t vx = (((pa * x + pb * y) - bgx) >> 8) % 240;
-		int32_t vy = (((pc * x + pd * y) - bgy) >> 8) % 160;
+		int32_t vx = ((pa * x + bgx) / 256) % 240;
+		int32_t vy = ((pc * x + bgy) / 256) % 160;
 		if (vx < 0)
 			vx += 240;
 		if (vy < 0)
@@ -243,22 +231,18 @@ static void draw_background_bitmap_5(gpu_t *gpu, uint8_t y, uint8_t *data)
 	memset(&data[0], 0, 4 * 40);
 	memset(&data[200 * 4], 0, 4 * 40);
 	int32_t pa = mem_get_reg16(gpu->mem, MEM_REG_BG2PA);
-	int32_t pb = mem_get_reg16(gpu->mem, MEM_REG_BG2PB);
 	int32_t pc = mem_get_reg16(gpu->mem, MEM_REG_BG2PC);
-	int32_t pd = mem_get_reg16(gpu->mem, MEM_REG_BG2PD);
-	int32_t bgx = mem_get_reg32(gpu->mem, MEM_REG_BG2X) & 0xFFFFFFF;
-	int32_t bgy = mem_get_reg32(gpu->mem, MEM_REG_BG2Y) & 0xFFFFFFF;
+	int32_t bgx = gpu->bg2x;
+	int32_t bgy = gpu->bg2y;
 	TRANSFORM_INT16(pa);
-	TRANSFORM_INT16(pb);
 	TRANSFORM_INT16(pc);
-	TRANSFORM_INT16(pd);
 	TRANSFORM_INT28(bgx);
 	TRANSFORM_INT28(bgy);
 	uint8_t baseaddr = (mem_get_reg32(gpu->mem, MEM_REG_DISPCNT) & (1 << 4)) ? 0xA000 : 0;
 	for (int32_t x = 0; x < 160; ++x)
 	{
-		int32_t vx = (((pa * x + pb * y) - bgx) >> 8) % 160;
-		int32_t vy = (((pc * x + pd * y) - bgy) >> 8) % 128;
+		int32_t vx = ((pa * x + bgx) / 256) % 160;
+		int32_t vy = ((pc * x + bgy) / 256) % 128;
 		if (vx < 0)
 			vx += 160;
 		if (vy < 0)
@@ -686,6 +670,7 @@ void gpu_draw(gpu_t *gpu, uint8_t y)
 	memset(&line, 0, sizeof(line));
 	uint16_t display = mem_get_reg16(gpu->mem, MEM_REG_DISPCNT);
 	uint32_t objbase;
+	printf("display: %x\n", display);
 	switch (display & 0x7)
 	{
 		case 0:
@@ -737,4 +722,8 @@ void gpu_draw(gpu_t *gpu, uint8_t y)
 	if (display & (1 << 0xC))
 		draw_objects(gpu, objbase, y, line.obj);
 	compose(gpu, &line, y);
+	gpu->bg2x += mem_get_reg32(gpu->mem, MEM_REG_BG2PB);
+	gpu->bg2y += mem_get_reg32(gpu->mem, MEM_REG_BG2PD);
+	gpu->bg3x += mem_get_reg32(gpu->mem, MEM_REG_BG3PB);
+	gpu->bg3y += mem_get_reg32(gpu->mem, MEM_REG_BG3PD);
 }

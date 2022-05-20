@@ -4,6 +4,7 @@
 #include "apu.h"
 #include "cpu.h"
 #include "gpu.h"
+
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -63,6 +64,10 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 {
 	gba->joypad = joypad;
 	gba_test_keypad_int(gba);
+	gba->gpu->bg2x = mem_get_reg32(gba->mem, MEM_REG_BG2X);
+	gba->gpu->bg2y = mem_get_reg32(gba->mem, MEM_REG_BG2Y);
+	gba->gpu->bg3x = mem_get_reg32(gba->mem, MEM_REG_BG3X);
+	gba->gpu->bg3y = mem_get_reg32(gba->mem, MEM_REG_BG3Y);
 	for (uint8_t y = 0; y < 160; ++y)
 	{
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFC) | 0x0);
