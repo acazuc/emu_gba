@@ -61,7 +61,6 @@ static void gba_cycle(gba_t *gba)
 
 void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joypad)
 {
-	//printf("frame\n");
 	gba->joypad = joypad;
 	gba_test_keypad_int(gba);
 	for (uint8_t y = 0; y < 160; ++y)
@@ -81,6 +80,7 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFC) | 0x2);
 		if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 4))
 			mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 1));
+		mem_hblank(gba->mem);
 
 		for (size_t i = 0; i < 272; ++i)
 			gba_cycle(gba);
@@ -88,6 +88,7 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 
 	if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 3))
 		mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 0));
+	mem_vblank(gba->mem);
 
 	for (uint8_t y = 160; y < 228; ++y)
 	{
@@ -105,12 +106,13 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFC) | 0x3);
 		if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 5) && mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 4))
 			mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 1));
+		mem_hblank(gba->mem);
 
 		for (size_t i = 0; i < 272; ++i)
 			gba_cycle(gba);
 	}
 	memcpy(video_buf, gba->gpu->data, sizeof(gba->gpu->data));
-	memset(audio_buf, 0, 804 * 2);
+	memcpy(audio_buf, gba->apu->data, sizeof(gba->apu->data));
 }
 
 void gba_get_mbc_ram(gba_t *gba, uint8_t **data, size_t *size)

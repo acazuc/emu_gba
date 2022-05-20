@@ -36,7 +36,7 @@ $(NAME): $(OBJS)
 	@echo "LD gbabios"
 	@$(LD) -r -b binary -o gbabios.o gbabios.bin
 	@echo "LD $(NAME)"
-	@$(LD) -fPIC -shared -o $(NAME) $(OBJS) gbabios.o
+	@$(CC) -fPIC -shared -o $(NAME) $(OBJS) gbabios.o
 
 $(OBJS_PATH)%.o: $(SRCS_PATH)%.c
 	@echo "CC $<"

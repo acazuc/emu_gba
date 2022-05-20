@@ -56,7 +56,14 @@
 #define MEM_REG_SOUNDCNT_H  0x082
 #define MEM_REG_SOUNDCNT_X  0x084
 #define MEM_REG_SOUNDBIAS   0x088
-#define MEM_REG_WAVE_RAM    0x090
+#define MEM_REG_WAVE_RAM0_L 0x090
+#define MEM_REG_WAVE_RAM0_H 0x092
+#define MEM_REG_WAVE_RAM1_L 0x094
+#define MEM_REG_WAVE_RAM1_H 0x096
+#define MEM_REG_WAVE_RAM2_L 0x098
+#define MEM_REG_WAVE_RAM2_H 0x09A
+#define MEM_REG_WAVE_RAM3_L 0x09C
+#define MEM_REG_WAVE_RAM3_H 0x09E
 #define MEM_REG_FIFO_A      0x0A0
 #define MEM_REG_FIFO_B      0x0A4
 
@@ -117,6 +124,7 @@ typedef struct gba_s gba_t;
 typedef struct mem_dma_s
 {
 	bool enabled;
+	bool active;
 	uint32_t src;
 	uint32_t dst;
 	uint32_t len;
@@ -141,6 +149,9 @@ typedef struct mem_s
 	uint8_t palette[0x400];
 	uint8_t vram[0x18000];
 	uint8_t oam[0x400];
+	uint8_t wave[0x20];
+	uint8_t fifo[2][0x20];
+	uint8_t fifo_nb[2];
 } mem_t;
 
 mem_t *mem_new(gba_t *gba, mbc_t *mbc);
@@ -148,6 +159,9 @@ void mem_del(mem_t *mem);
 
 void mem_timers(mem_t *mem);
 bool mem_dma(mem_t *mem);
+void mem_hblank(mem_t *mem);
+void mem_vblank(mem_t *mem);
+void mem_fifo(mem_t *mem, uint8_t fifo);
 
 uint8_t  mem_get8 (mem_t *mem, uint32_t addr);
 uint16_t mem_get16(mem_t *mem, uint32_t addr);
@@ -209,6 +223,14 @@ static inline uint16_t mem_get_bg_palette(mem_t *mem, uint32_t addr)
 static inline uint16_t mem_get_obj_palette(mem_t *mem, uint32_t addr)
 {
 	return *(uint16_t*)&mem->palette[0x200 + addr];
+}
+
+static inline uint8_t mem_get_wave4(mem_t *mem, uint8_t offset)
+{
+	uint8_t v = mem->wave[offset / 2];
+	if (offset & 1)
+		return v & 0xF;
+	return v >> 4;
 }
 
 #endif

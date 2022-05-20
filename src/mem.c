@@ -2,12 +2,17 @@
 #include "mbc.h"
 #include "gba.h"
 #include "cpu.h"
+#include "apu.h"
 
 #include <stdlib.h>
+#include <assert.h>
+#include <string.h>
 #include <stdio.h>
 
 extern uint8_t _binary_gbabios_bin_start;
 extern uint8_t _binary_gbabios_bin_end;
+
+static uint32_t g_dma_len_max[4] = {0x4000, 0x4000, 0x4000, 0x10000};
 
 mem_t *mem_new(gba_t *gba, mbc_t *mbc)
 {
@@ -54,7 +59,89 @@ void mem_timers(mem_t *mem)
 			mem->timers[i].v = mem_get_reg16(mem, MEM_REG_TM0CNT_L + i * 4);
 			if (cnt_h & (1 << 6))
 				mem_set_reg16(mem, MEM_REG_IF, mem_get_reg16(mem, MEM_REG_IF) | (1 << (3 + i)));
+			uint16_t sndcnt_h = mem_get_reg16(mem, MEM_REG_SOUNDCNT_H);
+			if (i == ((sndcnt_h >> 10) & 1))
+			{
+				uint8_t fifo_nb = mem->fifo_nb[0];
+				mem->gba->apu->fifo1_val = mem->fifo[0][fifo_nb ? fifo_nb - 1 : 0];
+				if (fifo_nb <= 0xF)
+					mem_fifo(mem, 0);
+				if (fifo_nb)
+					mem->fifo_nb[0]--;
+			}
+			if (i == ((sndcnt_h >> 14) & 1))
+			{
+				uint8_t fifo_nb = mem->fifo_nb[1];
+				mem->gba->apu->fifo1_val = mem->fifo[1][fifo_nb ? fifo_nb - 1 : 0];
+				if (fifo_nb <= 0xF)
+					mem_fifo(mem, 1);
+				if (fifo_nb)
+					mem->fifo_nb[1]--;
+			}
 		}
+	}
+}
+
+static void load_dma_length(mem_t *mem, size_t dma)
+{
+	mem->dma[dma].len = mem_get_reg16(mem, MEM_REG_DMA0CNT_L + 0xC * dma) - 1;
+	if (mem->dma[dma].len)
+	{
+		if (mem->dma[dma].len > g_dma_len_max[dma])
+			mem->dma[dma].len = g_dma_len_max[dma];
+	}
+	else
+	{
+		mem->dma[dma].len = g_dma_len_max[dma];
+	}
+}
+
+void mem_hblank(mem_t *mem)
+{
+	for (size_t i = 0; i < 4; ++i)
+	{
+		if (!mem->dma[i].enabled || mem->dma[i].active)
+			continue;
+		uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i);
+		if (((cnt_h >> 12) & 0x3) != 2)
+			continue;
+		if (((cnt_h >> 5) & 0x3) == 0x3)
+			mem->dma[i].dst = mem_get_reg32(mem, MEM_REG_DMA0DAD + 0xC * i);
+		load_dma_length(mem, i);
+		mem->dma[i].cnt = 0;
+		mem->dma[i].active = true;
+	}
+}
+
+void mem_vblank(mem_t *mem)
+{
+	for (size_t i = 0; i < 4; ++i)
+	{
+		if (!mem->dma[i].enabled || mem->dma[i].active)
+			continue;
+		uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i);
+		if (((cnt_h >> 12) & 0x3) != 1)
+			continue;
+		if (((cnt_h >> 5) & 0x3) == 0x3)
+			mem->dma[i].dst = mem_get_reg32(mem, MEM_REG_DMA0DAD + 0xC * i);
+		load_dma_length(mem, i);
+		mem->dma[i].cnt = 0;
+		mem->dma[i].active = true;
+	}
+}
+
+void mem_fifo(mem_t *mem, uint8_t fifo)
+{
+	for (size_t i = 1; i < 3; ++i)
+	{
+		if (!mem->dma[i].enabled)
+			continue;
+		uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i);
+		if (((cnt_h >> 12) & 0x3) != 3)
+			continue;
+		if (mem->dma[i].dst != 0x40000a0u + 0x4u * fifo)
+			continue;
+		mem->dma[i].active = true;
 	}
 }
 
@@ -62,9 +149,22 @@ bool mem_dma(mem_t *mem)
 {
 	for (size_t i = 0; i < 4; ++i)
 	{
-		if (!mem->dma[i].enabled)
+		if (!mem->dma[i].enabled || !mem->dma[i].active)
 			continue;
 		uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i);
+		if ((i == 1 || i == 2) && (((cnt_h >> 12) & 0x3) == 3))
+		{
+			printf("DMA %d\n", i);
+			uint8_t fifo_id = (mem->dma[i].dst - 0x40000a0u) / 4;
+			assert(mem->fifo_nb[i] <= 16);
+			memmove(&mem->fifo[fifo_id][16], &mem->fifo[fifo_id][0], mem->fifo_nb[fifo_id]);
+			for (size_t j = 0; j < 16; ++j)
+				mem->fifo[fifo_id][15 - j] = mem_get8(mem, mem->dma[i].src + j);
+			mem->dma[i].src += 16;
+			mem->fifo_nb[fifo_id] += 16;
+			mem->dma[i].active = false;
+			return true;
+		}
 		uint32_t step;
 		if (cnt_h & (1 << 10))
 		{
@@ -88,7 +188,6 @@ bool mem_dma(mem_t *mem)
 				break;
 			case 3:
 				mem->dma[i].dst += step;
-				//XXX reload
 				break;
 		}
 		switch ((cnt_h >> 7) & 3)
@@ -107,7 +206,9 @@ bool mem_dma(mem_t *mem)
 		mem->dma[i].cnt++;
 		if (mem->dma[i].cnt == mem->dma[i].len)
 		{
-			mem->dma[i].enabled = false;
+			mem->dma[i].active = false;
+			if (!(cnt_h & (1 << 9)))
+				mem->dma[i].enabled = false;
 			mem_set_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i, mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * i) & ~(1 << 15));
 			if (cnt_h & (1 << 14))
 				mem_set_reg16(mem, MEM_REG_IF, mem_get_reg16(mem, MEM_REG_IF) | (1 << (8 + i)));
@@ -119,25 +220,13 @@ bool mem_dma(mem_t *mem)
 
 static void dma_control(mem_t *mem, uint8_t dma)
 {
-	static uint32_t len_max[4] = {0x4000, 0x4000, 0x4000, 0x10000};
 	mem->dma[dma].src = mem_get_reg32(mem, MEM_REG_DMA0SAD + 0xC * dma);
 	mem->dma[dma].dst = mem_get_reg32(mem, MEM_REG_DMA0DAD + 0xC * dma);
-	mem->dma[dma].len = mem_get_reg16(mem, MEM_REG_DMA0CNT_L + 0xC * dma) - 1;
 	mem->dma[dma].cnt = 0;
-	if (mem->dma[dma].len)
-	{
-		if (mem->dma[dma].len > len_max[dma])
-			mem->dma[dma].len = len_max[dma];
-	}
-	else
-	{
-		mem->dma[dma].len = len_max[dma];
-	}
+	load_dma_length(mem, dma);
 	uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * dma);
-	mem->dma[dma].enabled = cnt_h & (1 << 15);
-	//printf("%s DMA of %x bytes from %x to %x\n", mem->dma[dma].enabled ? "starting" : "preparing", mem->dma[dma].len, mem->dma[dma].src, mem->dma[dma].dst);
-	if (mem->dma[dma].dst == 0x40000a0 || mem->dma[dma].dst == 0x40000a4)
-		return;
+	mem->dma[dma].enabled = (cnt_h >> 15) & 0x1;
+	mem->dma[dma].active = (((cnt_h >> 12) & 0x3) == 0);
 }
 
 static void timer_control(mem_t *mem, uint8_t timer, uint8_t v)
@@ -197,6 +286,52 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 		case MEM_REG_KEYCNT + 1:
 			mem->io_regs[reg] = v;
 			gba_test_keypad_int(mem->gba);
+			return;
+		case MEM_REG_SOUND1CNT_X + 1:
+			mem->io_regs[reg] = v;
+			if (v & (1 << 7))
+				apu_start_channel1(mem->gba->apu);
+			return;
+		case MEM_REG_SOUND2CNT_H + 1:
+			mem->io_regs[reg] = v;
+			if (v & (1 << 7))
+				apu_start_channel2(mem->gba->apu);
+			return;
+		case MEM_REG_SOUND3CNT_X + 1:
+			mem->io_regs[reg] = v;
+			if (v & (1 << 7))
+				apu_start_channel3(mem->gba->apu);
+			return;
+		case MEM_REG_SOUND4CNT_H + 1:
+			mem->io_regs[reg] = v;
+			if (v & (1 << 7))
+				apu_start_channel3(mem->gba->apu);
+			return;
+		case MEM_REG_WAVE_RAM0_L:
+		case MEM_REG_WAVE_RAM0_L + 1:
+		case MEM_REG_WAVE_RAM0_H:
+		case MEM_REG_WAVE_RAM0_H + 1:
+		case MEM_REG_WAVE_RAM1_L:
+		case MEM_REG_WAVE_RAM1_L + 1:
+		case MEM_REG_WAVE_RAM1_H:
+		case MEM_REG_WAVE_RAM1_H + 1:
+		case MEM_REG_WAVE_RAM2_L:
+		case MEM_REG_WAVE_RAM2_L + 1:
+		case MEM_REG_WAVE_RAM2_H:
+		case MEM_REG_WAVE_RAM2_H + 1:
+		case MEM_REG_WAVE_RAM3_L:
+		case MEM_REG_WAVE_RAM3_L + 1:
+		case MEM_REG_WAVE_RAM3_H:
+		case MEM_REG_WAVE_RAM3_H + 1:
+			if (mem_get_reg16(mem, MEM_REG_SOUND3CNT_L) & (1 << 6))
+				mem->wave[reg - MEM_REG_WAVE_RAM0_L] = v;
+			else
+				mem->wave[reg - MEM_REG_WAVE_RAM0_L + 0x10] = v;
+			return;
+		case MEM_REG_FIFO_A:
+		case MEM_REG_FIFO_A + 1:
+		case MEM_REG_FIFO_A + 2:
+		case MEM_REG_FIFO_A + 3:
 			return;
 		case MEM_REG_DMA0SAD:
 		case MEM_REG_DMA0SAD + 1:
@@ -300,38 +435,6 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 		case MEM_REG_BG3Y + 1:
 		case MEM_REG_BG3Y + 2:
 		case MEM_REG_BG3Y + 3:
-		case MEM_REG_WAVE_RAM:
-		case MEM_REG_WAVE_RAM + 0x1:
-		case MEM_REG_WAVE_RAM + 0x2:
-		case MEM_REG_WAVE_RAM + 0x3:
-		case MEM_REG_WAVE_RAM + 0x4:
-		case MEM_REG_WAVE_RAM + 0x5:
-		case MEM_REG_WAVE_RAM + 0x6:
-		case MEM_REG_WAVE_RAM + 0x7:
-		case MEM_REG_WAVE_RAM + 0x8:
-		case MEM_REG_WAVE_RAM + 0x9:
-		case MEM_REG_WAVE_RAM + 0xA:
-		case MEM_REG_WAVE_RAM + 0xB:
-		case MEM_REG_WAVE_RAM + 0xC:
-		case MEM_REG_WAVE_RAM + 0xD:
-		case MEM_REG_WAVE_RAM + 0xE:
-		case MEM_REG_WAVE_RAM + 0xF:
-		case MEM_REG_WAVE_RAM + 0x10:
-		case MEM_REG_WAVE_RAM + 0x11:
-		case MEM_REG_WAVE_RAM + 0x12:
-		case MEM_REG_WAVE_RAM + 0x13:
-		case MEM_REG_WAVE_RAM + 0x14:
-		case MEM_REG_WAVE_RAM + 0x15:
-		case MEM_REG_WAVE_RAM + 0x16:
-		case MEM_REG_WAVE_RAM + 0x17:
-		case MEM_REG_WAVE_RAM + 0x18:
-		case MEM_REG_WAVE_RAM + 0x19:
-		case MEM_REG_WAVE_RAM + 0x1A:
-		case MEM_REG_WAVE_RAM + 0x1B:
-		case MEM_REG_WAVE_RAM + 0x1C:
-		case MEM_REG_WAVE_RAM + 0x1D:
-		case MEM_REG_WAVE_RAM + 0x1E:
-		case MEM_REG_WAVE_RAM + 0x1F:
 		case MEM_REG_IME:
 		case MEM_REG_IME + 1:
 		case MEM_REG_IE:
@@ -425,6 +528,25 @@ static uint8_t get_reg(mem_t *mem, uint32_t reg)
 				v &= ~(1 << 1);
 			return v;
 		}
+		case MEM_REG_WAVE_RAM0_L:
+		case MEM_REG_WAVE_RAM0_L + 1:
+		case MEM_REG_WAVE_RAM0_H:
+		case MEM_REG_WAVE_RAM0_H + 1:
+		case MEM_REG_WAVE_RAM1_L:
+		case MEM_REG_WAVE_RAM1_L + 1:
+		case MEM_REG_WAVE_RAM1_H:
+		case MEM_REG_WAVE_RAM1_H + 1:
+		case MEM_REG_WAVE_RAM2_L:
+		case MEM_REG_WAVE_RAM2_L + 1:
+		case MEM_REG_WAVE_RAM2_H:
+		case MEM_REG_WAVE_RAM2_H + 1:
+		case MEM_REG_WAVE_RAM3_L:
+		case MEM_REG_WAVE_RAM3_L + 1:
+		case MEM_REG_WAVE_RAM3_H:
+		case MEM_REG_WAVE_RAM3_H + 1:
+			if (mem_get_reg16(mem, MEM_REG_SOUND3CNT_L) & (1 << 6))
+				return mem->wave[reg - MEM_REG_WAVE_RAM0_L];
+			return mem->wave[reg - MEM_REG_WAVE_RAM0_L + 0x10];
 	}
 	return mem->io_regs[reg];
 }
