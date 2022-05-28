@@ -338,28 +338,28 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 		case MEM_REG_BG2X + 2:
 		case MEM_REG_BG2X + 3:
 			mem->io_regs[reg] = v;
-			mem->gba->gpu->bg2x = mem_get_reg32(mem, MEM_REG_BG2X);
+			mem->gba->gpu->bg2x = mem_get_reg32(mem, MEM_REG_BG2X) & 0xFFFFFFF;
 			return;
 		case MEM_REG_BG2Y:
 		case MEM_REG_BG2Y + 1:
 		case MEM_REG_BG2Y + 2:
 		case MEM_REG_BG2Y + 3:
 			mem->io_regs[reg] = v;
-			mem->gba->gpu->bg2y = mem_get_reg32(mem, MEM_REG_BG2Y);
+			mem->gba->gpu->bg2y = mem_get_reg32(mem, MEM_REG_BG2Y) & 0xFFFFFFF;
 			return;
 		case MEM_REG_BG3X:
 		case MEM_REG_BG3X + 1:
 		case MEM_REG_BG3X + 2:
 		case MEM_REG_BG3X + 3:
 			mem->io_regs[reg] = v;
-			mem->gba->gpu->bg3x = mem_get_reg32(mem, MEM_REG_BG3X);
+			mem->gba->gpu->bg3x = mem_get_reg32(mem, MEM_REG_BG3X) & 0xFFFFFFF;
 			return;
 		case MEM_REG_BG3Y:
 		case MEM_REG_BG3Y + 1:
 		case MEM_REG_BG3Y + 2:
 		case MEM_REG_BG3Y + 3:
 			mem->io_regs[reg] = v;
-			mem->gba->gpu->bg3y = mem_get_reg32(mem, MEM_REG_BG3Y);
+			mem->gba->gpu->bg3y = mem_get_reg32(mem, MEM_REG_BG3Y) & 0xFFFFFFF;
 			return;
 		case MEM_REG_DMA0SAD:
 		case MEM_REG_DMA0SAD + 1:
