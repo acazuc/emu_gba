@@ -47,13 +47,22 @@ void mem_del(mem_t *mem)
 void mem_timers(mem_t *mem)
 {
 	static const uint16_t masks[4] = {0, 0x3F, 0xFF, 0x3FF};
+	bool prev_overflowed = false;
 	for (size_t i = 0; i < 4; ++i)
 	{
 		uint8_t cnt_h = mem_get_reg8(mem, MEM_REG_TM0CNT_H + i * 4);
 		if (!(cnt_h & (1 << 7)))
-			continue;
-		if ((mem->gba->cycle & masks[cnt_h & 3]))
-			continue;
+			goto next_timer;
+		if (i && (cnt_h & (1 << 2)))
+		{
+			if (!prev_overflowed)
+				goto next_timer;
+		}
+		else
+		{
+			if ((mem->gba->cycle & masks[cnt_h & 3]))
+				goto next_timer;
+		}
 		mem->timers[i].v++;
 		if (!mem->timers[i].v)
 		{
@@ -79,7 +88,11 @@ void mem_timers(mem_t *mem)
 				if (fifo_nb)
 					mem->fifo_nb[1]--;
 			}
+			prev_overflowed = true;
+			continue;
 		}
+next_timer:
+		prev_overflowed = false;
 	}
 }
 

@@ -211,16 +211,10 @@ void cpu_cycle(cpu_t *cpu)
 	//if (cpu_get_reg(cpu, CPU_REG_PC) == 0x872)
 	//	cpu->debug = 0;
 
-	switch (cpu->instr_delay)
+	if (cpu->instr_delay)
 	{
-		case 1:
-			cpu->instr_delay--;
-			break;
-		case 0:
-			break;
-		default:
-			cpu->instr_delay--;
-			return;
+		cpu->instr_delay--;
+		return;
 	}
 
 	if (!cpu->instr)
@@ -237,17 +231,9 @@ void cpu_cycle(cpu_t *cpu)
 			return;
 	}
 
-	if (cpu->instr->exec)
-	{
-		if (cpu->debug)
-			print_instr(cpu, "EXEC", cpu->instr);
-		cpu->instr->exec(cpu);
-	}
-	else
-	{
-		print_instr(cpu, "UNIM", cpu->instr);
-		cpu->regs.r[15] += CPU_GET_FLAG_T(cpu) ? 2 : 4;
-	}
+	if (cpu->debug)
+		print_instr(cpu, "EXEC", cpu->instr);
+	cpu->instr->exec(cpu);
 
 	(void)handle_interrupt(cpu);
 	(void)decode_instruction(cpu);

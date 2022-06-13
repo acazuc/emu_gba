@@ -31,7 +31,10 @@ do \
 do \
 { \
 	if ((n) & (1 << 27)) \
-		n = -(0x7FFFFFF - ((n) & 0x7FFFFFF)) - 1; \
+	{ \
+		n = (0x7FFFFFF - ((n) & 0x7FFFFFF)); \
+		n = -n - 1; \
+	} \
 } while (0)
 
 enum layer_type
@@ -97,6 +100,19 @@ static void draw_background_text(gpu_t *gpu, uint8_t y, uint8_t bg, uint8_t *dat
 		uint32_t mapy = vy / 8;
 		uint32_t tilex = vx % 8;
 		uint32_t tiley = vy % 8;
+		uint32_t mapoff = 0;
+		if (mapy >= 32)
+		{
+			mapy -= 32;
+			mapoff += 0x800;
+			if (size == 3)
+				mapoff += 0x800;
+		}
+		if (mapx >= 32)
+		{
+			mapx -= 32;
+			mapoff += 0x800;
+		}
 		uint32_t mapaddr = mapx + mapy * 32;
 		uint16_t map = mem_get_vram16(gpu->mem, mapbase + mapaddr * 2);
 		uint16_t tileid = map & 0x3FF;
@@ -454,6 +470,124 @@ static const uint8_t *layer_data(line_buff_t *line, enum layer_type layer, const
 	return NULL;
 }
 
+static void calcwindow(gpu_t *gpu, line_buff_t *line, uint8_t x, uint8_t y, uint8_t *winflags)
+{
+	uint16_t dispcnt = mem_get_reg16(gpu->mem, MEM_REG_DISPCNT);
+	uint16_t win0h = mem_get_reg16(gpu->mem, MEM_REG_WIN0H);
+	uint16_t win0v = mem_get_reg16(gpu->mem, MEM_REG_WIN0V);
+	uint16_t win1h = mem_get_reg16(gpu->mem, MEM_REG_WIN1H);
+	uint16_t win1v = mem_get_reg16(gpu->mem, MEM_REG_WIN1V);
+	uint16_t winin = mem_get_reg16(gpu->mem, MEM_REG_WININ);
+	uint16_t winout = mem_get_reg16(gpu->mem, MEM_REG_WINOUT);
+	uint8_t win0l = win0h >> 8;
+	uint8_t win0r = win0h & 0xFF;
+	uint8_t win0t = win0v >> 8;
+	uint8_t win0b = win0v & 0xFF;
+	uint8_t win1l = win1h >> 8;
+	uint8_t win1r = win1h & 0xFF;
+	uint8_t win1t = win1v >> 8;
+	uint8_t win1b = win1v & 0xFF;
+	if (dispcnt & (1 << 13))
+	{
+		if (win0l > win0r)
+		{
+			if (win0t > win0b)
+			{
+				if ((x < win0r || x >= win0l)
+				 && (y >= win0t || y < win0b))
+				{
+					*winflags = winin & 0xFF;
+					return;
+				}
+			}
+			else
+			{
+				if ((x < win0r || x >= win0l)
+				 && y >= win0t && y < win0b)
+				{
+					*winflags = winin & 0xFF;
+					return;
+				}
+			}
+		}
+		else
+		{
+			if (win0t > win0b)
+			{
+				if (x >= win0l && x < win0r
+				 && (y >= win0t || y < win0b))
+				{
+					*winflags = winin & 0xFF;
+					return;
+				}
+			}
+			else
+			{
+				if (x >= win0l && x < win0r
+				 && y >= win0t && y < win0b)
+				{
+					*winflags = winin & 0xFF;
+					return;
+				}
+			}
+		}
+	}
+	if (dispcnt & (1 << 14))
+	{
+		if (win1l > win1r)
+		{
+			if (win1t > win1b)
+			{
+				if ((x < win1r || x >= win1l)
+				 && (y >= win1t || y < win1b))
+				{
+					*winflags = winin >> 8;
+					return;
+				}
+			}
+			else
+			{
+				if ((x < win1r || x >= win1l)
+				 && y >= win1t && y < win1b)
+				{
+					*winflags = winin >> 8;
+					return;
+				}
+			}
+		}
+		else
+		{
+			if (win1t > win1b)
+			{
+				if (x >= win1l && x < win1r
+				 && (y >= win1t || y < win1b))
+				{
+					*winflags = winin >> 8;
+					return;
+				}
+			}
+			else
+			{
+				if (x >= win1l && x < win1r
+				 && y >= win1t && y < win1b)
+				{
+					*winflags = winin >> 8;
+					return;
+				}
+			}
+		}
+	}
+	if (dispcnt & (1 << 15))
+	{
+		if (line->obj[x * 4 + 3] & 0x40)
+		{
+			*winflags = winout >> 8;
+			return;
+		}
+	}
+	*winflags = winout & 0xFF;
+}
+
 static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 {
 	uint16_t bd_col = mem_get_bg_palette(gpu->mem, 0);
@@ -525,20 +659,6 @@ static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 	uint8_t top_mask = (bldcnt >> 0) & 0x3F;
 	uint8_t bot_mask = (bldcnt >> 8) & 0x3F;
 	uint8_t blending = (bldcnt >> 6) & 3;
-	uint16_t win0h = mem_get_reg16(gpu->mem, MEM_REG_WIN0H);
-	uint16_t win0v = mem_get_reg16(gpu->mem, MEM_REG_WIN0V);
-	uint16_t win1h = mem_get_reg16(gpu->mem, MEM_REG_WIN1H);
-	uint16_t win1v = mem_get_reg16(gpu->mem, MEM_REG_WIN1V);
-	uint16_t winin = mem_get_reg16(gpu->mem, MEM_REG_WININ);
-	uint16_t winout = mem_get_reg16(gpu->mem, MEM_REG_WINOUT);
-	uint8_t win0l = win0h >> 8;
-	uint8_t win0r = win0h & 0xFF;
-	uint8_t win0t = win0v >> 8;
-	uint8_t win0b = win0v & 0xFF;
-	uint8_t win1l = win1h >> 8;
-	uint8_t win1r = win1h & 0xFF;
-	uint8_t win1t = win1v >> 8;
-	uint8_t win1b = win1v & 0xFF;
 	uint16_t bldalpha = mem_get_reg16(gpu->mem, MEM_REG_BLDALPHA);
 	uint8_t bldy = mem_get_reg16(gpu->mem, MEM_REG_BLDY) & 0x1F;
 	uint8_t eva = (bldalpha >> 0) & 0x1F;
@@ -549,19 +669,7 @@ static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 		uint8_t winflags;
 		if (has_window)
 		{
-			if ((dispcnt & (1 << 13))
-			 && x >= win0l && x < win0r
-			 && y >= win0t && y < win0b)
-				winflags = winin & 0xFF;
-			else if ((dispcnt & (1 << 14))
-			      && x >= win1l && x < win1r
-			      && y >= win1t && y < win1b)
-				winflags = winin >> 8;
-			else if ((dispcnt & (1 << 15))
-			      && (line->obj[x * 4 + 3] & 0x40))
-				winflags = winout >> 8;
-			else
-				winflags = winout & 0xFF;
+			calcwindow(gpu, line, x, y, &winflags);
 		}
 		else
 		{
@@ -570,86 +678,89 @@ static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 		uint8_t pixel_blend = blending;
 		if (!(winflags & (1 << 5)))
 			pixel_blend = 0;
-		if (line->obj[x * 4 + 3] & 1)
+		if (!pixel_blend && !(line->obj[x * 4 + 3] & 1))
+		{
+			enum layer_type layer = LAYER_BD;
+			uint8_t priority = 4;
+			for (size_t i = 0; i < bg_order_cnt; ++i)
+			{
+				uint8_t bgid = bg_order[i];
+				if ((winflags & (1 << bgid)) && bg_data[bgid][x * 4 + 3])
+				{
+					layer = LAYER_BG0 + bgid;
+					priority = bg_prio[i];
+					break;
+				}
+			}
+			if (winflags & (1 << 4))
+			{
+				uint8_t obj = line->obj[x * 4 + 3];
+				if ((obj & 0x80) && ((obj >> 1) & 3) <= priority)
+					layer = LAYER_OBJ;
+			}
+			memcpy(dst, layer_data(line, layer, bd_color, x * 4, 0xFF), 3);
+			continue;
+		}
+		enum layer_type top_layer = LAYER_BD;
+		enum layer_type bot_layer = LAYER_BD;
+		uint8_t top_priority = 4;
+		uint8_t bot_priority = 4;
+		uint8_t alpha_obj_mask = 0;
+		for (size_t i = 0; i < bg_order_cnt; ++i)
+		{
+			uint8_t bgid = bg_order[i];
+			if (!(winflags & (1 << bgid)))
+				continue;
+			if (!bg_data[bgid][x * 4 + 3])
+				continue;
+			uint8_t prio = bg_prio[i];
+			if (prio < top_priority)
+			{
+				bot_layer = top_layer;
+				bot_priority = top_priority;
+				top_layer = LAYER_BG0 + bgid;
+				top_priority = prio;
+				continue;
+			}
+			if (prio < bot_priority)
+			{
+				bot_layer = LAYER_BG0 + bgid;
+				bot_priority = prio;
+				continue;
+			}
+		}
+		if (winflags & (1 << 4))
+		{
+			uint8_t obj = line->obj[x * 4 + 3];
+			if (obj & 0x80)
+			{
+				uint8_t prio = (obj >> 1) & 3;
+				if (prio <= top_priority)
+				{
+					bot_priority = top_priority;
+					bot_layer = top_layer;
+					top_priority = prio;
+					top_layer = LAYER_OBJ;
+					alpha_obj_mask = (obj & 1) << 4;
+				}
+				else if (prio <= bot_priority)
+				{
+					bot_priority = prio;
+					bot_layer = LAYER_OBJ;
+				}
+			}
+		}
+		const uint8_t *top_layer_data = layer_data(line, top_layer, bd_color, x * 4, top_mask | alpha_obj_mask);
+		const uint8_t *bot_layer_data = layer_data(line, bot_layer, bd_color, x * 4, bot_mask);
+		if (alpha_obj_mask && bot_layer_data)
 			pixel_blend = 1;
 		switch (pixel_blend)
 		{
 			case 0:
-			{
-				enum layer_type layer = LAYER_BD;
-				uint8_t priority = 4;
-				for (size_t i = 0; i < bg_order_cnt; ++i)
-				{
-					uint8_t bgid = bg_order[i];
-					if ((winflags & (1 << bgid)) && bg_data[bgid][x * 4 + 3])
-					{
-						layer = LAYER_BG0 + bgid;
-						priority = bg_prio[i];
-						break;
-					}
-				}
-				if (winflags & (1 << 4))
-				{
-					uint8_t obj = line->obj[x * 4 + 3];
-					if ((obj & 0x80) && ((obj >> 1) & 3) <= priority)
-						layer = LAYER_OBJ;
-				}
-				memcpy(dst, layer_data(line, layer, bd_color, x * 4, 0xFF), 3);
+				top_layer_data = layer_data(line, top_layer, bd_color, x * 4, 0xFF);
+				memcpy(dst, top_layer_data, 3);
 				break;
-			}
 			case 1:
-			{
-				enum layer_type top_layer = LAYER_BD;
-				enum layer_type bot_layer = LAYER_BD;
-				uint8_t top_priority = 4;
-				uint8_t bot_priority = 4;
-				uint8_t alpha_obj_mask = 0;
-				for (size_t i = 0; i < bg_order_cnt; ++i)
-				{
-					uint8_t bgid = bg_order[i];
-					if (!(winflags & (1 << bgid)))
-						continue;
-					if (!bg_data[bgid][x * 4 + 3])
-						continue;
-					uint8_t prio = bg_prio[i];
-					if (prio < top_priority)
-					{
-						bot_layer = top_layer;
-						bot_priority = top_priority;
-						top_layer = LAYER_BG0 + bgid;
-						top_priority = prio;
-						continue;
-					}
-					if (prio < top_priority)
-					{
-						bot_layer = LAYER_BG0 + bgid;
-						bot_priority = prio;
-						continue;
-					}
-				}
-				if (winflags & (1 << 4))
-				{
-					uint8_t obj = line->obj[x * 4 + 3];
-					if (obj & 0x80)
-					{
-						uint8_t prio = (obj >> 1) & 3;
-						if (prio <= top_priority)
-						{
-							bot_priority = top_priority;
-							bot_layer = top_layer;
-							top_priority = prio;
-							top_layer = LAYER_OBJ;
-							alpha_obj_mask = (obj & 0x40) >> 2;
-						}
-						else if (prio <= bot_priority)
-						{
-							bot_priority = prio;
-							bot_layer = LAYER_OBJ;
-						}
-					}
-				}
-				const uint8_t *top_layer_data = layer_data(line, top_layer, bd_color, x * 4, top_mask | alpha_obj_mask);
-				const uint8_t *bot_layer_data = layer_data(line, bot_layer, bd_color, x * 4, bot_mask);
 				if (top_layer_data && bot_layer_data)
 				{
 					for (size_t i = 0; i < 3; ++i)
@@ -666,56 +777,31 @@ static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 					memcpy(dst, top_layer_data, 3);
 				}
 				break;
-			}
 			case 2:
 			{
-				enum layer_type layer = LAYER_NONE;
-				for (size_t i = 0; i < bg_order_cnt; ++i)
+				if (top_layer_data != NULL)
 				{
-					uint8_t bgid = bg_order[i];
-					if ((winflags & (1 << bgid)) && (bldcnt & (1 << bgid)) && bg_data[bgid][x * 4 + 3])
-					{
-						layer = LAYER_BG0 + bgid;
-						break;
-					}
-				}
-				if ((winflags & (1 << 4)) && (bldcnt & (1 << 4)) && (line->obj[x * 4 + 3] & 0x80))
-					layer = LAYER_OBJ;
-				if (layer != LAYER_NONE)
-				{
-					const uint8_t *data = layer_data(line, layer, bd_color, x * 4, 0xFF);
 					for (size_t i = 0; i < 3; ++i)
-						dst[i] = data[i] + (((255 - data[i]) * bldy) >> 4);
+						dst[i] = top_layer_data[i] + (((255 - top_layer_data[i]) * bldy) >> 4);
 				}
 				else
 				{
-					memset(dst, 0xFF, 3);
+					top_layer_data = layer_data(line, top_layer, bd_color, x * 4, 0xFF);
+					memcpy(dst, top_layer_data, 3);
 				}
 				break;
 			}
 			case 3:
 			{
-				enum layer_type layer = LAYER_NONE;
-				for (size_t i = 0; i < bg_order_cnt; ++i)
+				if (top_layer_data != NULL)
 				{
-					uint8_t bgid = bg_order[i];
-					if ((winflags & (1 << bgid)) && (bldcnt & (1 << bgid)) && bg_data[bgid][x * 4 + 3])
-					{
-						layer = LAYER_BG0 + bgid;
-						break;
-					}
-				}
-				if ((winflags & (1 << 4)) && (bldcnt & (1 << 4)) && (line->obj[x * 4 + 3] & 0x80))
-					layer = LAYER_OBJ;
-				if (layer != LAYER_NONE)
-				{
-					const uint8_t *data = layer_data(line, layer, bd_color, x * 4, 0xFF);
 					for (size_t i = 0; i < 3; ++i)
-						dst[i] = data[i] - ((data[i] * bldy) >> 4);
+						dst[i] = top_layer_data[i] - ((top_layer_data[i] * bldy) >> 4);
 				}
 				else
 				{
-					memset(dst, 0, 3);
+					top_layer_data = layer_data(line, top_layer, bd_color, x * 4, 0xFF);
+					memcpy(dst, top_layer_data, 3);
 				}
 				break;
 			}
