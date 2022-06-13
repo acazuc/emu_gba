@@ -3,6 +3,16 @@
 
 #include <stdint.h>
 
+#define TRANSFORM_INT28(n) \
+do \
+{ \
+	if ((n) & (1 << 27)) \
+	{ \
+		n = (0x7FFFFFF - ((n) & 0x7FFFFFF)); \
+		n = -n - 1; \
+	} \
+} while (0)
+
 typedef struct mem_s mem_t;
 
 typedef struct gpu_s
