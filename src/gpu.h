@@ -19,5 +19,6 @@ gpu_t *gpu_new(mem_t *mem);
 void gpu_del(gpu_t *gpu);
 
 void gpu_draw(gpu_t *gpu, uint8_t y);
+void gpu_commit_bgpos(gpu_t *gpu);
 
 #endif

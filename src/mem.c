@@ -85,7 +85,7 @@ void mem_timers(mem_t *mem)
 
 static void load_dma_length(mem_t *mem, size_t dma)
 {
-	mem->dma[dma].len = mem_get_reg16(mem, MEM_REG_DMA0CNT_L + 0xC * dma) - 1;
+	mem->dma[dma].len = mem_get_reg16(mem, MEM_REG_DMA0CNT_L + 0xC * dma);
 	if (mem->dma[dma].len)
 	{
 		if (mem->dma[dma].len > g_dma_len_max[dma])
@@ -361,6 +361,14 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 			mem->io_regs[reg] = v;
 			mem->gba->gpu->bg3y = mem_get_reg32(mem, MEM_REG_BG3Y) & 0xFFFFFFF;
 			return;
+		case MEM_REG_WIN0H:
+		case MEM_REG_WIN0H + 1:
+		case MEM_REG_WIN0V:
+		case MEM_REG_WIN0V + 1:
+		case MEM_REG_WIN1H:
+		case MEM_REG_WIN1H + 1:
+		case MEM_REG_WIN1V:
+		case MEM_REG_WIN1V + 1:
 		case MEM_REG_DMA0SAD:
 		case MEM_REG_DMA0SAD + 1:
 		case MEM_REG_DMA0SAD + 2:

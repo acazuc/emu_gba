@@ -87,6 +87,7 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 			gba_cycle(gba);
 	}
 
+	gpu_commit_bgpos(gba->gpu);
 	if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 3))
 		mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 0));
 	mem_vblank(gba->mem);
@@ -107,7 +108,6 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFC) | 0x3);
 		if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 5) && mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 4))
 			mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 1));
-		mem_hblank(gba->mem);
 
 		for (size_t i = 0; i < 272; ++i)
 			gba_cycle(gba);
