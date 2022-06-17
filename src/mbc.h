@@ -1,14 +1,26 @@
 #ifndef MBC_H
 #define MBC_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+
+enum mbc_backup_type
+{
+	MBC_EEPROM,
+	MBC_SRAM,
+	MBC_FLASH64,
+	MBC_FLASH128,
+};
 
 typedef struct mbc_s
 {
 	uint8_t *data;
 	size_t data_size;
-	uint8_t sram[0x10000];
+	uint8_t backup[0x20000];
+	enum mbc_backup_type backup_type;
+	bool chipid;
+	uint8_t cmdphase;
 } mbc_t;
 
 mbc_t *mbc_new(const void *data, size_t size);

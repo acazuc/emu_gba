@@ -69,7 +69,7 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFC) | 0x0);
 		mem_set_reg16(gba->mem, MEM_REG_VCOUNT, y);
 
-		if (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 5) && y == ((mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) >> 8) & 0xFF))
+		if ((mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 5)) && y == ((mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) >> 8) & 0xFF))
 			mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 2));
 
 		/* draw */
@@ -97,7 +97,7 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 		mem_set_reg16(gba->mem, MEM_REG_DISPSTAT, (mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & 0xFFFE) | 0x1);
 		mem_set_reg16(gba->mem, MEM_REG_VCOUNT, y);
 
-		if (y == ((mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) >> 8) & 0xFF))
+		if ((mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) & (1 << 5)) && y == ((mem_get_reg16(gba->mem, MEM_REG_DISPSTAT) >> 8) & 0xFF))
 			mem_set_reg16(gba->mem, MEM_REG_IF, mem_get_reg16(gba->mem, MEM_REG_IF) | (1 << 2));
 
 		/* vblank */
@@ -118,8 +118,8 @@ void gba_frame(gba_t *gba, uint8_t *video_buf, int16_t *audio_buf, uint32_t joyp
 
 void gba_get_mbc_ram(gba_t *gba, uint8_t **data, size_t *size)
 {
-	*data = gba->mbc->sram;
-	*size = sizeof(gba->mbc->sram);
+	*data = gba->mbc->backup;
+	*size = sizeof(gba->mbc->backup);
 }
 
 void gba_get_mbc_rtc(gba_t *gba, uint8_t **data, size_t *size)

@@ -82,7 +82,7 @@ void mem_timers(mem_t *mem)
 			if (i == ((sndcnt_h >> 14) & 1))
 			{
 				uint8_t fifo_nb = mem->fifo_nb[1];
-				mem->gba->apu->fifo1_val = mem->fifo[1][fifo_nb ? fifo_nb - 1 : 0];
+				mem->gba->apu->fifo2_val = mem->fifo[1][fifo_nb ? fifo_nb - 1 : 0];
 				if (fifo_nb <= 0xF)
 					mem_fifo(mem, 1);
 				if (fifo_nb)
@@ -124,6 +124,7 @@ void mem_hblank(mem_t *mem)
 		load_dma_length(mem, i);
 		mem->dma[i].cnt = 0;
 		mem->dma[i].active = true;
+		//printf("start HDMA %d of %08x words from %08x to %08x\n", i, mem->dma[i].len, mem->dma[i].src, mem->dma[i].dst);
 	}
 }
 
@@ -141,6 +142,7 @@ void mem_vblank(mem_t *mem)
 		load_dma_length(mem, i);
 		mem->dma[i].cnt = 0;
 		mem->dma[i].active = true;
+		//printf("start VDMA %d of %08x words from %08x to %08x\n", i, mem->dma[i].len, mem->dma[i].src, mem->dma[i].dst);
 	}
 }
 
@@ -240,6 +242,8 @@ static void dma_control(mem_t *mem, uint8_t dma)
 	uint16_t cnt_h = mem_get_reg16(mem, MEM_REG_DMA0CNT_H + 0xC * dma);
 	mem->dma[dma].enabled = (cnt_h >> 15) & 0x1;
 	mem->dma[dma].active = (((cnt_h >> 12) & 0x3) == 0);
+//	if (mem->dma[dma].active)
+//		printf("start DMA %d of %08x words from %08x to %08x: %04x\n", dma, mem->dma[dma].len, mem->dma[dma].src, mem->dma[dma].dst, cnt_h);
 }
 
 static void timer_control(mem_t *mem, uint8_t timer, uint8_t v)
@@ -378,6 +382,18 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 			mem->gba->gpu->bg3y = mem_get_reg32(mem, MEM_REG_BG3Y) & 0xFFFFFFF;
 			TRANSFORM_INT28(mem->gba->gpu->bg3y);
 			return;
+		case MEM_REG_DISPSTAT:
+			mem->io_regs[reg] = (mem->io_regs[reg] & 0x47) | (v & ~0x47);
+			return;
+		case MEM_REG_DISPSTAT + 1:
+			mem->io_regs[reg] = v;
+			return;
+		case MEM_REG_VCOUNT:
+		case MEM_REG_VCOUNT + 1:
+			break;
+		case MEM_REG_SOUNDCNT_X:
+			mem->io_regs[reg] = (mem->io_regs[reg] & 0xF) | (v & ~0xF);
+			return;
 		case MEM_REG_WIN0H:
 		case MEM_REG_WIN0H + 1:
 		case MEM_REG_WIN0V:
@@ -428,10 +444,6 @@ static void set_reg(mem_t *mem, uint32_t reg, uint8_t v)
 		case MEM_REG_DMA3CNT_L  +1:
 		case MEM_REG_DISPCNT:
 		case MEM_REG_DISPCNT + 1:
-		case MEM_REG_DISPSTAT:
-		case MEM_REG_DISPSTAT + 1:
-		case MEM_REG_VCOUNT:
-		case MEM_REG_VCOUNT + 1:
 		case MEM_REG_BG0CNT:
 		case MEM_REG_BG0CNT + 1:
 		case MEM_REG_BG1CNT:
@@ -686,8 +698,6 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 		addr &= ~1; \
 	if (size == 32) \
 		addr &= ~3; \
-	if (addr >= 0x10000000) \
-		goto end; \
 	switch ((addr >> 24) & 0xF) \
 	{ \
 		case 0x0: /* bios */ \
@@ -742,6 +752,8 @@ void mem_set##size(mem_t *mem, uint32_t addr, uint##size##_t v) \
 		case 0xF: \
 			mbc_set##size(mem->mbc, addr, v); \
 			return; \
+		default: \
+			break; \
 	} \
 end:; \
 	/*printf("[%08x] unknown set" #size " addr: %08x\n", cpu_get_reg(mem->gba->cpu, CPU_REG_PC), addr);*/ \

@@ -591,7 +591,7 @@ static void compose(gpu_t *gpu, line_buff_t *line, uint8_t y)
 	for (size_t x = 0; x < 240; ++x)
 	{
 		memcpy(&gpu->data[(240 * y + x) * 4], bd_color, 4);
-#if 1
+#if 0
 		line->bg0[x * 4 + 0] = line->bg0[x * 4 + 0] / 4 + 0xBF;
 		line->bg0[x * 4 + 1] = line->bg0[x * 4 + 1] / 4;
 		line->bg0[x * 4 + 2] = line->bg0[x * 4 + 2] / 4;
