@@ -46,9 +46,10 @@ static uint8_t channel3(apu_t *apu)
 		pos += 0x20;
 	uint8_t sample = mem_get_wave4(apu->mem, pos);
 	sample = sample | (sample << 4);
-	if (apu->wave3_gain & 0x4)
+	uint8_t gain = mem_get_reg16(apu->mem, MEM_REG_SOUND3CNT_H) >> 13;
+	if (gain & 0x4)
 		return (sample >> 2) + (sample >> 4);
-	return sample >> gain_shifts[apu->wave3_gain];
+	return sample >> gain_shifts[gain & 0x3];
 }
 
 static uint8_t channel4(apu_t *apu)
@@ -347,7 +348,6 @@ void apu_start_channel3(apu_t *apu)
 	uint16_t cnt_x = mem_get_reg16(apu->mem, MEM_REG_SOUND3CNT_X);
 	apu->wave3_nb = 2048 - (cnt_x & 0x7FF);
 	apu->wave3_len = 256 - (cnt_h & 0xFF);
-	apu->wave3_gain = (cnt_h >> 13) & 0x7;
 	apu->wave3_haslen = (cnt_x >> 14) & 0x1;
 }
 

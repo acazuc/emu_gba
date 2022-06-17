@@ -45,7 +45,6 @@ typedef struct apu_s
 	uint32_t wave2_cnt;
 	uint32_t wave2_nb;
 	uint8_t wave3_haslen;
-	uint32_t wave3_gain;
 	uint32_t wave3_len;
 	uint32_t wave3_val;
 	uint32_t wave3_cnt;
